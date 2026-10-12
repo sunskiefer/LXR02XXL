@@ -1,4 +1,4 @@
-# LXRXXL v0.5.6
+# LXRXXL v0.5.7
 
 ![LXRXXL on MPC](docs/img/page.png)
 
@@ -66,15 +66,15 @@ starts on this project, on pattern 1; an MPC project you saved opens as you save
 **RESET** (blue key, top left): back to the factory project, pattern 1 with its kit, the sequencer stopped. Anything
 not saved is replaced.
 
-Two keys and two knobs for randomizing, beside the data encoder:
+Two keys and two knobs for randomizing, along the top of the panel (each key shows its knob's amount):
 
-- **RANDOM** (green key, green knob 0-100 % in steps of 10): every sound parameter of the six voices moves up or down
+- **RANDOM** (green key with the warning sign, green knob 0-100 % in steps of 10): every sound parameter of the six voices moves up or down
   by a random amount of up to the knob's share of its range, each on its own draw, so the voices change differently.
   A parameter never lands where it is, nor back where it was before the last press. Whatever would silence a voice
   keeps at least 30 %: the voice volumes, the amp envelope decays, the oscillator pitch and a filter's cutoff (a
   high-pass cutoff at most 70 %, an attack at most 70 %). The outputs and the modulation routings stay as they are.
-  The key lights green for a moment; the unlit key is white. **With SHIFT only the selected voice** changes.
-- **SEQ RND** (yellow key, yellow knob): a new beat on the pattern, a euclidean rhythm per voice. At n % each voice
+  The key lights up brighter for a moment. **With SHIFT only the selected voice** changes.
+- **SEQ RND** (yellow key with the question mark, yellow knob): a new beat on the pattern, a euclidean rhythm per voice. At n % each voice
   gets about n % of its track's steps (between half and all of that, drawn per voice), spread evenly, turned by a
   random rotation, with random accents. Every press is a new beat; it replaces the voices' steps. **With SHIFT only
   the selected voice** gets a new beat, at the knob's density.

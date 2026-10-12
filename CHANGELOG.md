@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.7
+- The new panel by Suns Kiefer (art/panel/PANEL SOURCE.png, fitted under the keys by tools/fit_panel.py), with the
+  top bezel; the keys, pots, faders, the data encoder and RESET keep their places and pictures, and the DATA dial is
+  centred on the encoder.
+- The randomizers move to the top of the panel with new knob caps and keys (green with a warning sign, yellow with a
+  question mark); each key shows its knob's amount. RESET, green and yellow keys show their colour unlit and brighten
+  when lit.
+
 ## 0.5.6
 - LOAD / SAVE: the "DATA" legend (the encoder's push) blinks red while a slot waits to be confirmed (also in CLEAR and
   pad learn), and pressing the same data key again (KIT, MORPH, SONG, PROJECT) confirms too. Changing kit: LOAD, KIT,
