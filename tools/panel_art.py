@@ -59,6 +59,10 @@ def draw_background():
     name, lx, ly = P.RESET_LABEL
     panel.alpha_composite(art(name), (lx, ly))
     panel = scaled(panel)
+    # the bezel along the top edge
+    name, th = P.TOP
+    top = art(name).resize((panel.size[0], th), Image.LANCZOS)
+    panel.alpha_composite(top, (0, 0))
     bg.alpha_composite(panel, (P.OX, 0))
     # the randomizers' legends, at their own proportions on the page
     for m in P.MOD.values():
@@ -85,7 +89,7 @@ def crop(bg, x, y, w, h):
 
 # ------------------------------------------------------------------------------------------------ the keys
 def mod_key_pictures(bg, m):
-    """the mod's keys (green, yellow, blue): lit = the key's own picture, unlit = the same glass in white"""
+    """the mod's keys (green, yellow, blue): lit = the key's own picture brightened, unlit = the same glass dimmer"""
     src = art(m["key_img"])
     k = m["key_w"] / src.size[0]
     if m.get("round"):   # the randomizer keys: round on the page
@@ -97,10 +101,10 @@ def mod_key_pictures(bg, m):
     a = np.array(src).astype(np.float32)
     rgb, alpha = a[..., :3], a[..., 3:]
     lum = rgb @ np.array([0.30, 0.59, 0.11], np.float32)
-    white = np.repeat(np.clip(lum * 1.15 + 70, 0, 255)[..., None], 3, axis=2)   # the same glass, unlit
-    lit = rgb
+    unlit = rgb * 0.75                                                          # the same coloured glass, dimmer
+    lit = np.clip(rgb * 1.1 + 12, 0, 255)
     pics = []
-    for col in (white, lit):
+    for col in (unlit, lit):
         g = Image.fromarray(np.concatenate([col, alpha], axis=2).astype(np.uint8), "RGBA")
         im = crop(bg, x0, y0, w, h)
         im.alpha_composite(g.resize((w, h), Image.LANCZOS))
@@ -316,13 +320,20 @@ def main(skin):
         strip, (x, y, s, _) = knob_strip(bg, m["knob_img"], m["knob"], m.get("knob_size"))
         name = "lxr_%s.png" % m["amt"]
         save(strip, name)
-        disc = P.MOD_KNOB_DISC * P.S
         dkey = "lxrKnob_%s" % m["amt"]
-        new_defs.append(definition(dkey, KNOB_ACTIONS, [
-            focus(s, s), filmstrip("Knob", name, KNOB_FRAMES - 1, s, s),
-            label("Value", "Value", bounds((s - disc) / 2 - 4, (s - disc) / 2, disc + 8, disc), 11, "fff2f2f2",
-                  "horizontallyCentred verticallyCentred")]))
-        put(m["amt"], dkey, (x, y, s, s))
+        new_defs.append(definition(dkey, KNOB_ACTIONS, [focus(s, s), filmstrip("Knob", name, KNOB_FRAMES - 1, s, s)]))
+        knob, amt = placed(m["amt"])   # layout.conf: the knob, then the amount's readout on the key
+        knob["componentData"]["type"] = dkey
+        knob["bounds"]["bounds"] = bounds(x, y, s, s)
+        # the amount on the key: text only, touches go through to the key under it
+        cx, cy = P.page(*m["key"])
+        akey = "lxrAmt_%s" % m["amt"]
+        d = definition(akey, [], [label("Value", "Value", bounds(0, 0, P.AMT_W, P.AMT_H), 12, "ff141414",
+                                        "horizontallyCentred verticallyCentred")])
+        d["value"]["ignoreMousePresses"] = True
+        new_defs.append(d)
+        amt["componentData"]["type"] = akey
+        amt["bounds"]["bounds"] = bounds(cx - P.AMT_W / 2, cy - P.AMT_H / 2, P.AMT_W, P.AMT_H)
     # the data encoder
     strip, (x, y, s, _) = knob_strip(bg, "Main KNOB.png", P.DATA)
     save(strip, "lxr_data.png")
