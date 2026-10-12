@@ -5,7 +5,8 @@
     python3 tools/panel.py --check     (fails when layout.conf is stale)
 
 The page is built from the panel artwork in art/panel/ (the panel by Suns Kiefer, laid out like the LXR-02, 1000 x 638):
-    BACKGROUND SYNTH.png                   the panel without its knobs, keys and fader caps
+    BACKGROUND SYNTH.png                   the panel without its knobs, keys and fader caps (made from PANEL SOURCE.png,
+                                           fitted to the keys' places by tools/fit_panel.py)
     BUTTONS OFF ALL.png / BUTTONS ON ALL.png   every key unlit / lit, in place (a sheet 8 px left and 1 px up of the panel)
     Main KNOB.png                          the data encoder
     PARAMETER DATA KNOB.png                the four parameter pots
@@ -52,17 +53,19 @@ POTS = [(71.5, 332.5), (172.5, 332.5), (273.5, 332.5), (374.5, 332.5)]   # PARAM
 POT_DISC = 47                      # the white centre of the pot picture (diameter): the value is printed there
 ENC = (465.5, 262, 64, 22)         # the encoder's push: a touch area on the "DATA" legend (cx, cy, w, h)
 
-# ---- the mod (MOD OVERVIEW.png shows where): the voice randomizer (green) and the step randomizer (yellow), each a
-# key (MOD BUTTON GREEN ON.png; the yellow and the unlit white are made from it) and an amount knob turning in its scale
-MOD = {   # key centre and width on the panel, its lit picture, knob centre, scale picture's top-left, knob/scale pictures
-    "rnd": dict(key=(456.5, 76.5), key_w=45, key_img="MOD BUTTON GREEN ON.png", knob=(524.5, 77.5), scale=(486, 40),
-                knob_img="MOD KNOB GREEN.png", scale_img="MOD SCALE GREEN.png", amt="rnd_amt"),
-    "srnd": dict(key=(457.0, 298.0), key_w=42, key_img="MOD BUTTON YELLOW ON.png", knob=(524.5, 289.5),
-                 scale=(485, 253), knob_img="MOD KNOB YELLOW.png", scale_img="MOD SCALE YELLOW.png", amt="srnd_amt"),
+# ---- the mod: the voice randomizer (green) and the step randomizer (yellow), each a key (MOD BUTTON GREEN / YELLOW ON.png;
+# the unlit white is made from it) and an amount knob (MOD KNOB GREEN / YELLOW.png), in the band above the display and the
+# faders, with their legends (MOD LABEL VOICE.png, the warning sign; MOD LABEL STEP.png, the question mark). Keys and knobs
+# are round on the page: key_w and knob_size are their page size / S. label: picture, top-left, page px per picture px.
+MOD = {
+    "rnd": dict(key=(598.2, 27.3), key_w=49.0, key_img="MOD BUTTON GREEN ON.png", knob=(521.6, 53.9), knob_size=99.9,
+                knob_img="MOD KNOB GREEN.png", label=("MOD LABEL VOICE.png", 621.5, 1.3, 1.13), amt="rnd_amt", round=True),
+    "srnd": dict(key=(323.9, 27.9), key_w=49.0, key_img="MOD BUTTON YELLOW ON.png", knob=(401.5, 53.9), knob_size=99.9,
+                 knob_img="MOD KNOB YELLOW.png", label=("MOD LABEL STEP.png", 278.9, 5.0, 1.13), amt="srnd_amt", round=True),
 }
 RESET_KEY = dict(key=(54.0, 76.5), key_w=50, key_img="MOD BUTTON BLUE ON.png")   # the blue RESET key
 RESET_LABEL = ("MOD RESET LABEL.png", 4, 26)   # its legend, cut from MOD OVERVIEW.png at this place
-MOD_KNOB_DISC = 33                 # the coloured centre of the knob pictures (diameter): the amount is printed there
+MOD_KNOB_DISC = 34                 # the knob's black centre (diameter, in knob_size units): the amount is printed there
 FADERS = [586.5, 648.5, 709.5, 769.5, 833.0, 893.5, 955.5]   # fader centres (x)
 FADER_TOP, FADER_BOTTOM = 96, 317  # the fader frame: the cap's travel
 FADER_W = 33                       # the cap's width (SLIDER CAP one.png, 33 x 51)
@@ -152,7 +155,7 @@ def layout_lines():
         cx, cy = page(*m["key"])
         L.append('button cx=%d cy=%d label="" key=%s' % (round(cx), L_y(cy), k))
         cx, cy = page(*m["knob"])
-        L.append('knob cx=%d cy=%d r=24 label="" key=%s ns=0 bw=60' % (round(cx), L_y(cy), m["amt"]))
+        L.append('knob cx=%d cy=%d r=44 label="" key=%s ns=0 bw=96' % (round(cx), L_y(cy), m["amt"]))
     # Q-Links: bank 1 = the 7 faders and the data encoder on knob 8; bank 2 = the 4 pots and the encoder on knob 8
     L.append('qlinks "LXRXXL" = fader1,fader2,fader3,fader4,fader5,fader6,fader7,data,pot1,pot2,pot3,pot4,rnd_amt,srnd_amt,-,data')
     return L

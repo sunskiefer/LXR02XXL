@@ -55,13 +55,18 @@ def draw_background():
     col = np.clip(np.repeat(g[:, :, None], 3, axis=2), 0, 255).astype(np.uint8)
     bg.paste(Image.fromarray(col, "RGB"), (0, 0))
     panel = art("BACKGROUND SYNTH.png")
-    # the mod: the amount knobs' scales and the RESET legend, printed on the panel
-    for m in P.MOD.values():
-        panel.alpha_composite(art(m["scale_img"]), m["scale"])
+    # the mod: the RESET legend printed on the panel
     name, lx, ly = P.RESET_LABEL
     panel.alpha_composite(art(name), (lx, ly))
     panel = scaled(panel)
     bg.alpha_composite(panel, (P.OX, 0))
+    # the randomizers' legends, at their own proportions on the page
+    for m in P.MOD.values():
+        name, lx, ly, k = m["label"]
+        pic = art(name)
+        pic = pic.resize((round(pic.size[0] * k), round(pic.size[1] * k)), Image.LANCZOS)
+        px, py = P.page(lx, ly)
+        bg.alpha_composite(pic, (round(px), round(py)))
     d = ImageDraw.Draw(bg)
     # the screen of the value column, in the style of the panel's display window
     x, y, w, h = P.COL
@@ -83,7 +88,10 @@ def mod_key_pictures(bg, m):
     """the mod's keys (green, yellow, blue): lit = the key's own picture, unlit = the same glass in white"""
     src = art(m["key_img"])
     k = m["key_w"] / src.size[0]
-    w, h = round(src.size[0] * k * P.SX), round(src.size[1] * k * P.SY)
+    if m.get("round"):   # the randomizer keys: round on the page
+        w, h = round(src.size[0] * k * P.S), round(src.size[1] * k * P.S)
+    else:
+        w, h = round(src.size[0] * k * P.SX), round(src.size[1] * k * P.SY)
     cx, cy = P.page(*m["key"])
     x0, y0 = round(cx - w / 2), round(cy - h / 2)
     a = np.array(src).astype(np.float32)
@@ -148,12 +156,12 @@ def fader_strip(bg, fx):
     return strip, frames, (x0, y0, w, h)
 
 
-def knob_strip(bg, name, centre):
+def knob_strip(bg, name, centre, size=None):
     pic = art(name)
     side = max(pic.size)
     sq = Image.new("RGBA", (side, side), (0, 0, 0, 0))
     sq.alpha_composite(pic, ((side - pic.size[0]) // 2, (side - pic.size[1]) // 2))
-    s = round(side * P.S)
+    s = round((size or side) * P.S)
     cx, cy = P.page(*centre)
     x0, y0 = round(cx - s / 2), round(cy - s / 2)
     under = crop(bg, x0, y0, s, s)
@@ -305,14 +313,14 @@ def main(skin):
         put(key, dkey, (x, y, w, h))
         if key == "reset":
             continue
-        strip, (x, y, s, _) = knob_strip(bg, m["knob_img"], m["knob"])
+        strip, (x, y, s, _) = knob_strip(bg, m["knob_img"], m["knob"], m.get("knob_size"))
         name = "lxr_%s.png" % m["amt"]
         save(strip, name)
         disc = P.MOD_KNOB_DISC * P.S
         dkey = "lxrKnob_%s" % m["amt"]
         new_defs.append(definition(dkey, KNOB_ACTIONS, [
             focus(s, s), filmstrip("Knob", name, KNOB_FRAMES - 1, s, s),
-            label("Value", "Value", bounds((s - disc) / 2 - 4, (s - disc) / 2, disc + 8, disc), 12, "ff141414",
+            label("Value", "Value", bounds((s - disc) / 2 - 4, (s - disc) / 2, disc + 8, disc), 11, "fff2f2f2",
                   "horizontallyCentred verticallyCentred")]))
         put(m["amt"], dkey, (x, y, s, s))
     # the data encoder
