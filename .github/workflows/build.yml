@@ -50,10 +50,10 @@ jobs:
           VERSION="${{ steps.ver.outputs.version }}"
           python3 third_party/mpc-vst-plugins/tools/release.py \
             --so build/arm/lxrxxl.so \
-            --skin "build/package/ANDREALPHEUS - VST - LXRXXL" \
+            --skin "build/package/L'Cronx - VST - LXRXXL" \
             --entry build/pluginlist-entry.xml \
             --version "$VERSION" \
-            --about "LXRXXL by ANDREALPHEUS: the open-source Sonic Potions LXR engine for MPC OS, inspired by the Erica Synths LXR-02" \
+            --about "LXRXXL by L'Cronx: the open-source Sonic Potions LXR engine for MPC OS, inspired by the Erica Synths LXR-02" \
             --id lxrxxl --repo sunskiefer/LXR02XXL --license LicenseRef-LXR02-Open \
             $( [ -f bench.json ] && echo --bench bench.json ) \
             -o dist

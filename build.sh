@@ -3,12 +3,12 @@
 #   ./build.sh                     (MPC_VST=../mpc-vst-plugins to use another framework checkout)
 # Needs: python3 + Pillow, a host gcc (for shadow_art), and Zig (pip install ziglang; its clang is needed: the LXR
 # engine's per-instance state uses clang's section pragma). No Docker.
-# Output: build/package/ANDREALPHEUS - VST - LXRXXL/  (skin + lxrxxl.so)
+# Output: build/package/L'Cronx - VST - LXRXXL/  (skin + lxrxxl.so)
 set -euo pipefail
 cd "$(dirname "$0")"
 MPC_VST="${MPC_VST:-$PWD/third_party/mpc-vst-plugins}"
 ZIG="${ZIG:-python3 -m ziglang}"
-NAME="ANDREALPHEUS - VST - LXRXXL"
+NAME="L'Cronx - VST - LXRXXL"
 . ./build_srcs.sh
 python3 tools/gen_params.py
 python3 tools/panel.py --check

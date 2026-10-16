@@ -143,8 +143,8 @@ scp -r LXRXXL-<version> root@<device-ip>:/tmp/
 ssh -t root@<device-ip> sh /tmp/LXRXXL-<version>/install.sh
 ```
 
-The installer stops MPC (save first), copies the plugin to `/sdcard/Synths/ANDREALPHEUS - VST - LXRXXL/`, adds it to
-MPC's plugin list and starts MPC again. Load **LXRXXL** (ANDREALPHEUS) as a plugin instrument. `uninstall.sh` removes
+The installer stops MPC (save first), copies the plugin to `/sdcard/Synths/L'Cronx - VST - LXRXXL/`, adds it to
+MPC's plugin list and starts MPC again. Load **LXRXXL** (L'Cronx) as a plugin instrument. `uninstall.sh` removes
 it. INSTALL.md in the zip has the manual steps.
 
 ## Building

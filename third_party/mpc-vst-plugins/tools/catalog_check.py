@@ -328,6 +328,8 @@ def check(zpath, catalog=False, expect_id=None, expect_repo=None):
         tpl = os.path.join(HERE, "release", "addin" if addin else "", script)
         if os.path.exists(tpl) and script in files:
             text = open(tpl).read()
+            for k in ("@NAME@", "@SKIN@"):   # a name with ' (L'Cronx) inside the script's '...' quotes
+                text = text.replace("'%s'" % k, "'%s'" % sub[k].replace("'", "'\\''"))
             for k, v in sub.items():
                 text = text.replace(k, v)
             if text.encode() != files[script]:

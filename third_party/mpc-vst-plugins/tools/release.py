@@ -96,6 +96,8 @@ sub = {"@NAME@": name, "@SO_NAME@": so_name, "@SKIN@": skin_name,
        "@UID@": attr["uid"], "@LEGACY_SO@": legacy_so, "@USER_DATA@": " ".join(a.user_data)}
 for script in ("install.sh", "uninstall.sh"):
     text = open(os.path.join(HERE, "release", script)).read()
+    for k in ("@NAME@", "@SKIN@"):   # a name with ' (L'Cronx) inside the script's '...' quotes
+        text = text.replace("'%s'" % k, "'%s'" % sub[k].replace("'", "'\\''"))
     for k, v in sub.items():
         text = text.replace(k, v)
     p = os.path.join(root, script)

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.9
+- Packed under **L'Cronx**: the plugin folder is now `L'Cronx - VST - LXRXXL` and MPC lists the maker as L'Cronx. Nothing else
+  changed from 0.5.8. If you installed 0.5.8, run its `uninstall.sh` first (copy out anything you saved inside the plugin
+  folder), then install 0.5.9. The installer handles the ' in the folder name.
+
 ## 0.5.8
 - Bigger text, sizes and places unchanged: the PARAMETERS column's names and values (30), the display's two lines
   (30), the pots' values (24) and the randomizer amounts on the green and yellow keys (15).
