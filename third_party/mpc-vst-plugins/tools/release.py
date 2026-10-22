@@ -96,9 +96,9 @@ sub = {"@NAME@": name, "@SO_NAME@": so_name, "@SKIN@": skin_name,
        "@UID@": attr["uid"], "@LEGACY_SO@": legacy_so, "@USER_DATA@": " ".join(a.user_data)}
 for script in ("install.sh", "uninstall.sh"):
     text = open(os.path.join(HERE, "release", script)).read()
-    for k in ("@NAME@", "@SKIN@"):   # a name with ' (L'Cronx) inside the script's '...' quotes
-        text = text.replace("'%s'" % k, "'%s'" % sub[k].replace("'", "'\\''"))
-    for k, v in sub.items():
+    for k, v in sub.items():   # inside '...' a quote must be closed, escaped and reopened: L'Cronx -> L'\''Cronx
+        if k != "@EXTRAS@":    # (EXTRAS holds its own quoted words)
+            text = text.replace("'%s'" % k, "'%s'" % v.replace("'", "'\\''"))
         text = text.replace(k, v)
     p = os.path.join(root, script)
     open(p, "w", newline="\n").write(text)
@@ -200,6 +200,8 @@ def _json_or_none(path):
 # which MPC OS generations the skin and library work on: ["2.x", "3.x"] or ["3.x"] (tools/skin_compat.py, docs/OS2_SKINS.md)
 os_compat, os_why = skin_compat.os_compat(max_glibc(a.so), _json_or_none(os.path.join(pdir, "Plugin Skins", "TUI.json")),
                                           _json_or_none(os.path.join(pdir, "Plugin Skins", "Q-Links.json")))
+if elf_machine(a.so) == "aarch64":
+    os_compat, os_why = ["3.x"], ["Gen2 runs MPC OS 3.x only"]
 print("MPC OS compatibility: %s%s" % (" and ".join(os_compat), "" if "2.x" in os_compat else " only (not 2.x: %s)" % "; ".join(os_why[:2])))
 
 plugin_id = a.id or re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
@@ -254,7 +256,7 @@ for p in walk(root):
 open(os.path.join(root, "SHA256SUMS"), "w").write("\n".join(sums) + "\n")
 
 os.makedirs(a.out, exist_ok=True)
-zpath = os.path.join(a.out, top + "-mpc-armv7.zip")
+zpath = os.path.join(a.out, "%s-mpc-%s.zip" % (top, "aarch64" if manifest["arch"] == "aarch64" else "armv7"))   # -mpc-armv7.zip (Gen1) or -mpc-aarch64.zip (Gen2)
 with zipfile.ZipFile(zpath, "w", zipfile.ZIP_DEFLATED) as z:
     for p in walk(root):
         info = zipfile.ZipInfo(os.path.relpath(p, stage), date_time=(2026, 1, 1, 0, 0, 0))

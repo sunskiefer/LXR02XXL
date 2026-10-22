@@ -2,7 +2,7 @@
 
 An addin is a library that MPC OS standalone devices (MPC Live/One/X/Key, Force) load into the MPC process through
 `LD_PRELOAD` when MPC starts, rather than a plugin that MPC's host loads on a track. Examples: a remote-control web
-server, the MPC as a USB audio interface. Addins are listed in the catalog next to plugins (kind `addin`), released as
+server, the MPC as a USB audio interface, a rolling recorder that saves the last seconds on a double press. Addins are listed in the catalog next to plugins (kind `addin`), released as
 one zip each, and installed by the same tools: the zip's own `install.sh`, `tools/mpc-store.sh` on the device, or the
 desktop app (`tools/desktop`).
 
@@ -53,6 +53,37 @@ the known case: whatever opens `/dev/dri/card*` first, while the card has no mas
 master, and MPC then fails with "Failed to initialise display". An addin (or a helper tool) that opens the card must
 call `DRM_IOCTL_DROP_MASTER` right after opening it (NOTES.md, 2026-10-03).
 
+### MockbaMod and other launchers that set LD_PRELOAD themselves
+
+MockbaMod's `boot.sh` starts MPC with `export LD_PRELOAD="$(cat /dev/shm/.LD_PRELOAD)"`, a list the `AddOns/run_*.sh`
+scripts fill in. The systemd line or drop-in above never reaches MPC there, so an addin installed only that way is
+silently not loaded. When a card with `MockbaMod/env.sh` and an `AddOns` folder is found (via `/dev/shm/.mmPath`, else
+`/media/*`), `install.sh` also writes `AddOns/run_<id>.sh` and adds the `.so` to that file straight away, so the restart
+that follows loads it; `uninstall.sh` removes both. The hook adds the `.so` only if it is missing, under the same
+`/dev/shm/.LD_PRELOAD.lock` the mod's own scripts use, does it before anything else (boot.sh starts every hook in the
+background and launches MPC a second later) and does nothing on `kill`. Tests: case 12 in `tools/test_addin.sh`.
+
+### After a reboot: `/etc` is mounted after systemd reads its units
+
+On MPC OS 3.x `/etc` is an overlay (upper layer on `/data`) that systemd mounts itself, a few seconds into boot
+(`etc.mount`). By then systemd has read its units from the read-only `/etc` underneath, so it does not see the shared
+drop-in, and MPC's first start after a boot runs without the addins until something runs `systemctl daemon-reload`
+(reinstalling an addin does). Reported on a Key 37 and a Live II (mpc-addin-usb-audio #1 and #2), and seen on a Key 37
+(NOTES.md, 2026-10-11).
+
+So when the installer uses the shared drop-in and `/etc` is an overlay, it also writes
+`/usr/lib/systemd/system/mpc-addins-reload.service` on the root filesystem, linked from `acvs.service.wants/`. It runs once
+per boot after `etc.mount` and before MPC, and only runs `systemctl daemon-reload`. It does nothing while there is no
+drop-in (`ConditionPathExists`), and a failure is ignored, so MPC then starts as it did before. The root is mounted
+read-only: the installer remounts it writable for that one write and read-only again, and warns and carries on if it
+cannot. The first install writes it, later installs leave the root alone, and the last uninstall (the one that removes
+the drop-in) deletes it. A file of that name the installer did not write is never touched. A firmware update replaces the
+root filesystem, so the unit goes with it: re-run an addin's installer afterwards, as for the drop-in. Without the overlay
+(MPC OS 2.x, or a unit edited in place) nothing is written. Tests: case 14 in `tools/test_addin.sh`.
+
+A side effect: an addin that crashes MPC now does so after a reboot too. Before, a reboot happened to start MPC without
+the addins. The steps below still apply.
+
 ## When an addin stops MPC from starting
 
 An addin runs inside MPC, so a broken one can crash MPC at every start. SSH stays up (it is a separate service), and
@@ -93,6 +124,8 @@ starts). The ones in the catalog, and what anyone who can reach the port can the
 | `remote` | HTTP 6720 | none | see and touch the screen, send any MIDI into MPC, and read text files in the `mcp_files` folders through its MCP endpoint (read-only; `mcp=0` turns MCP off). The MCP endpoint refuses requests from a web page on another site (`Origin` and `Host` checks); the rest of the server has no such check |
 | `commander` | HTTP and WebSocket 6730 | none | change any parameter of the VST plugins MPC has loaded, send MIDI and transport commands into MPC, write to the control-surface injector file, read the most recent project file and the plugins' skins. There is no `Origin` check yet, so a web page open in a browser on the same network can reach it too |
 
+`install.sh` asks about this itself for an addin with `ADDIN_NETWORK=1`, on a first interactive install (`-y` keeps the safe default), and after restarting MPC it checks that the library is in the new MPC's `LD_PRELOAD`, warning if a launcher dropped it.
+
 An upgrade keeps the user's settings file, so a device that installed an older release with `bind=0.0.0.0` keeps
 listening on the network until `bind` is changed by hand.
 
@@ -109,6 +142,7 @@ ADDIN_SO=mpc_remote_addin.so          # preloaded into MPC
 ADDIN_CONF=mpc_remote_addin.conf      # installed only when the folder has none ("" none)
 ADDIN_FILES="standalone"              # other files, replaced on every install ("" none)
 ADDIN_DONE="Open http://<device>:6720 in a browser."   # printed at the end ("" none)
+ADDIN_NETWORK=1                       # the settings file has bind=127.0.0.1: a first interactive install asks to open it ("" none)
 ```
 
 `ADDIN_VERSION` is added by `tools/release_addin.py`. File names are plain names (no `/`, no leading `.`) and may not
@@ -164,8 +198,9 @@ the three installer files next to the build output) and run its `install.sh`.
   addins side by side: appending to a list, idempotency, settings kept, one uninstall leaving the other, the quoted
   form, the shared drop-in, the winning drop-in, `inmusic-mpc`, a read-only unit and a firmware update changing its
   list, the folder's own uninstaller, refusals of odd folders (`/`, `/etc`, `..`, a folder not named after the addin)
-  and bad manifests, a library that is not a 32-bit ARM shared object, a drop-in from a newer format, and an
-  uninstall that keeps a file the user added. `BUSYBOX=/path/to/busybox` runs it
+  and bad manifests, a library that is not a 32-bit ARM shared object, a drop-in from a newer format, an
+  uninstall that keeps a file the user added, MockbaMod hooks, and the reload unit for an `/etc` overlay (written once,
+  removed with the last addin, never over someone else's file, nothing without an overlay). `BUSYBOX=/path/to/busybox` runs it
   in the device's shell (the default when `busybox` is on the PATH).
 - `tools/test_catalog.py` (`AddinTest`, `StoreTest`): packaging, validation and tampering, registry and
   `catalog.tsv`, and `mpc-store.sh` installing, updating and removing an addin alongside a plugin.

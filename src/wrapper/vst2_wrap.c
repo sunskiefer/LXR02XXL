@@ -9,7 +9,7 @@
  * small FIFO, so any host block size works; with 128-frame host blocks each
  * process() call renders exactly one DSP block and MIDI lands at its start.
  *
- * LXRXXL: a copy of mpc-vst-plugins' wrapper/vst2_wrap.c with two additions, both marked "LXRXXL":
+ * LXRXXL: a copy of mpc-vst-plugins' wrapper/vst2_wrap.c (based on mpc-vst-plugins lcronx-release-quoting 5412591: upstream #486-#489 Q-Link/automation UpdateDisplay fix) with two additions, both marked "LXRXXL":
  *   - HAS_HOST_TIME: every block the engine gets MPC's song position and tempo ("host_time" = "playing ppq tempo"), so
  *     the LXR sequencer can put its steps on MPC's grid (docs/MIDI_TIMING.md) instead of counting clock pulses;
  *   - the state chunk grows as needed (the engine's state is a whole LXR project, not a few presets).
@@ -61,6 +61,10 @@ void wrap_trace(int kind, int idx, float value);
 #ifndef HAS_TRANSPORT
 #define HAS_TRANSPORT 0 /* 1: tell the DSP when the host transport plays/stops as "transport" = "1"/"0"; a jump back
                           * in song position while playing (a loop, a locate) is sent as "1" again */
+#endif
+#ifndef HAS_SONG_POS
+#define HAS_SONG_POS 0  /* 1: call the engine's song_pos() every block with the host's ppqPos, tempo and play state (a MIDI
+                          * generator placing notes from the song position; docs/MIDI_TIMING.md). The engine must provide it. */
 #endif
 #ifndef MODULE_DIR
 #define MODULE_DIR NULL /* set via vst.json "defines" for a DSP that reads its own files
@@ -139,6 +143,8 @@ typedef struct {
     int playing;             /* HAS_TRANSPORT: last transport state sent */
     double ppq;              /* HAS_TRANSPORT: song position at the last block, to spot a jump back */
     volatile char need_update_display;  /* deferred audioMasterUpdateDisplay -- see setParameter() */
+    float pend0, pend0_from;  /* a host set of parameter 0 not applied yet, and where parameter 0 was before it */
+    int has_pend0;            /* (see setParameter) */
     char last_rev[16];       /* HAS_DISPLAY_REV: the "display_rev" last seen */
     float last_norm[NPARAMS];   /* HAS_DISPLAY_REV: value last reported per param (-1 = never) */
     float open[NPARAMS];     /* popup "open" flags (popup.h): kept here, never sent to the DSP or saved */
@@ -149,6 +155,7 @@ typedef struct {
     int nrpn_msb;
     volatile char cc_changed[NPARAMS];   /* set from MIDI CC/NRPN, reported to the host at most every 1024 frames */
     int cc_report;           /* frames until CC-driven changes are reported again */
+    int update_wait;         /* frames until another audioMasterUpdateDisplay may be sent (see housekeeping) */
     int program;             /* NPRESETS: the preset last picked (not in the engine's state; 0 after a reload) */
 #if SAMPLE_ACCURATE
     struct { int32_t frame; uint8_t msg[3]; } evq[WRAP_EVQ];   /* this block's MIDI, sorted by frame (see queue_midi) */
@@ -207,6 +214,7 @@ static float str_to_norm(const param_t *p, const char *s) {
 static float get_norm(wrap_t *w, int i) {
     char buf[64];
     if (i < 0 || i >= NPARAMS) return 0;
+    if (i == 0 && __atomic_load_n(&w->has_pend0, __ATOMIC_ACQUIRE)) return w->pend0;   /* set, not applied yet */
     if (popup_is(i)) return w->open[i];
     if (PARAMS[i].string_display) {
         /* a text param's value is not its text: a DSP may expose "<key>_on" (list-tile selection) */
@@ -231,7 +239,7 @@ static float settle(float pos, float cur, float last) {
     return dir > 0 ? ceilf(pos - 0.001f) : floorf(pos + 0.001f);
 }
 
-static void setParameter(AEffect *e, int32_t i, float n) {
+static void set_param_now(AEffect *e, int32_t i, float n) {
     wrap_t *w = e->object;
     TRACE(0, i, n);
     char buf[64];
@@ -333,17 +341,59 @@ static void setParameter(AEffect *e, int32_t i, float n) {
         }
         n = clamp01(steps / span);
     }
+    /* List tiles: housekeeping pushes "<key>_on" with audioMasterAutomate, and MPC calls
+     * setParameter from inside that. Feeding the echo back into the engine re-selects the
+     * row that just turned off. A real tap already moved the host Toggle Switch; remember
+     * that value so the next poll only corrects the previous row. */
+    if (p->string_display && w->last_on[i] >= 0) {
+        int on = n > 0.5f ? 1 : 0;
+        if (w->last_on[i] == on + 1) return;
+        w->last_on[i] = (signed char)(on + 1);
+    }
     norm_to_str(p, n, buf, sizeof buf);
     eng_set(w, PARAMS[i].key, buf);
     if (PARAMS[i].momentary && n > 0.5f) w->holdFrames[i] = PARAMS[i].hold_ms > 0 ? (int)(PARAMS[i].hold_ms * 44.1f) : 1;
     if (!nudge) popup_picked(w->open, w->holdFrames, i);   /* a list pick closes it; a Q-Link nudge doesn't */
-    w->need_update_display = 1;   /* deferred to processReplacing(), see the step_target branch above */
+    /* No UpdateDisplay for a plain host write: the host knows the value it sent, and MPC answers every UpdateDisplay by
+     * rebuilding its parameter screen, so asking on each write (each automation step, each Q-Link event) left Q-Links
+     * unable to move a param on the track's automation screen (docs/NOTES.md, 2026-10-21). Polled readouts see the
+     * change within 100 ms (housekeeping); "refresh_display" opts a param back in for unpolled text that depends on it. */
+    if (p->refresh_display) w->need_update_display = 1;   /* deferred to processReplacing(), see the step_target branch */
+}
+
+/* MPC's plugin host (JUCE) sets parameter 0 to the far end of its range and straight back whenever it gets ready to play:
+ * on insert and on every STOP ("a dodgy hack to force some plugins to initialise the sample rate", for plugins without an
+ * editor; seen in a Live II trace, 2026-10-10). Applied as they come, the two sets load a preset twice when parameter 0
+ * is a preset, and every knob moved since goes back to it. So a host set of parameter 0 waits for the next block (or for
+ * a read of it, its display text, a preset, the state, another parameter) and only the last one counts; a pair that ends
+ * where it started is dropped. The host's own toggle reads nothing in between. */
+static void flush_pend0(AEffect *e) {
+    wrap_t *w = e->object;
+    if (!__atomic_exchange_n(&w->has_pend0, 0, __ATOMIC_ACQ_REL)) return;
+    if (fabsf(w->pend0 - w->pend0_from) > 1e-6f) set_param_now(e, 0, w->pend0);
+}
+
+static void setParameter(AEffect *e, int32_t i, float n) {
+    wrap_t *w = e->object;
+    if (i == 0 && NPARAMS > 0) {
+        if (!__atomic_load_n(&w->has_pend0, __ATOMIC_ACQUIRE)) w->pend0_from = get_norm(w, 0);
+        w->pend0 = n;
+        __atomic_store_n(&w->has_pend0, 1, __ATOMIC_RELEASE);
+        return;
+    }
+    flush_pend0(e);
+    set_param_now(e, i, n);
 }
 
 static float getParameter(AEffect *e, int32_t i) {
+    if (i == 0) flush_pend0(e);   /* a read applies a held parameter 0: the host reads back what the engine took */
     float v = get_norm(e->object, i);
     TRACE(1, i, v);
     return v;
+}
+
+static void eng_song_pos(wrap_t *w, double ppq, double bpm, int playing, int frames) {
+    pthread_mutex_lock(&w->lock); g_api->song_pos(w->dsp, ppq, bpm, playing, frames); pthread_mutex_unlock(&w->lock);
 }
 
 static void update_transport(wrap_t *w, const VstTimeInfo *ti) {
@@ -357,11 +407,15 @@ static void update_transport(wrap_t *w, const VstTimeInfo *ti) {
 #ifndef HAS_HOST_TIME
 #define HAS_HOST_TIME 0
 #endif
-static void update_tempo(wrap_t *w) {
+static void update_tempo(wrap_t *w, int32_t n) {
     VstTimeInfo *ti = (VstTimeInfo *)w->master(&w->fx, audioMasterGetTime, 0,
-                                              kVstTempoValid | ((HAS_TRANSPORT || HAS_HOST_TIME) ? kVstPpqPosValid : 0), 0, 0);
+                                              kVstTempoValid | ((HAS_TRANSPORT || HAS_SONG_POS || HAS_HOST_TIME) ? kVstPpqPosValid : 0), 0, 0);
     if (!ti) return;
     if (HAS_TRANSPORT) update_transport(w, ti);
+    if (HAS_SONG_POS) {   /* ppq < 0 tells the engine the host gave no position */
+        int ok = (ti->flags & kVstPpqPosValid) && (ti->flags & kVstTempoValid) && ti->tempo > 0;
+        eng_song_pos(w, ok ? ti->ppqPos : -1.0, ok ? ti->tempo : 0.0, (ti->flags & kVstTransportPlaying) != 0, n);
+    }
 #if HAS_HOST_TIME
     {   /* LXRXXL: the song position at this block's start, the tempo and play state, every block */
         char hb[96];
@@ -438,7 +492,7 @@ static void render_events(wrap_t *w, float **out, int32_t n, int accumulate) {
 
 static void housekeeping(AEffect *e, int32_t n) {
     wrap_t *w = e->object;
-    if (HAS_LFO_BPM || HAS_TRANSPORT || HAS_HOST_TIME) update_tempo(w);   /* LXRXXL: HAS_HOST_TIME too */
+    if (HAS_LFO_BPM || HAS_TRANSPORT || HAS_SONG_POS || HAS_HOST_TIME) update_tempo(w, n);   /* LXRXXL: HAS_HOST_TIME too */
     /* A trigger param (e.g. Generate) fired: tell the host it is back to 0 so
      * buttons bound to it drop their highlight. Done here, not inside
      * setParameter, so the host is not re-entered from its own call. */
@@ -497,13 +551,31 @@ static void housekeeping(AEffect *e, int32_t n) {
             }
         }
     }
+    /* parameters the engine changed by itself (engine.h mpc_engine_changed): reported as a CC's are, just below */
+    if (mpc_engine_changed) {
+        char key[64];
+        pthread_mutex_lock(&w->lock);
+        for (int k = 0; k < NPARAMS && mpc_engine_changed(w->dsp, key, sizeof key) > 0; k++)
+            for (int i = 0; i < NPARAMS; i++)
+                if (!strcmp(PARAMS[i].key, key)) {
+                    w->last_pos[i] = -1;   /* the host's last position no longer stands (settle()) */
+                    w->cc_changed[i] = 1;
+                    if (PARAMS[i].nopts > 1) w->need_update_display = 1;
+                    break;
+                }
+        pthread_mutex_unlock(&w->lock);
+    }
     if ((w->cc_report -= n) <= 0) {
         w->cc_report = 1024;
         for (int i = 0; i < NPARAMS; i++)
             if (w->cc_changed[i]) { w->cc_changed[i] = 0; w->master(&w->fx, audioMasterAutomate, i, 0, 0, get_norm(w, i)); }
     }
-    if (w->need_update_display) {
+    /* At most one UpdateDisplay per 50 ms (2205 frames); a request inside that window waits, it is not dropped. MPC rebuilds its
+     * parameter screen on each one, so a burst (a held stepper, readouts that change every poll) must not become a rebuild per block. */
+    if (w->update_wait > 0) w->update_wait -= n;
+    if (w->need_update_display && w->update_wait <= 0) {
         w->need_update_display = 0;
+        w->update_wait = 2205;
         w->master(&w->fx, audioMasterUpdateDisplay, 0, 0, 0, 0.0f);
     }
 }
@@ -515,6 +587,7 @@ static int16_t f2s(float f) { f *= 32768.0f; return f >= 32767.0f ? 32767 : f <=
  * any other block size is collected and processed one block late. */
 static void run_block(AEffect *e, float **in, float **out, int32_t n, int accumulate) {
     wrap_t *w = e->object;
+    flush_pend0(e);   /* parameter 0, set since the last block (setParameter) */
     housekeeping(e, n);
     /* A conforming host passes real input to an effect, but a plugin scanner (and the device's own load
      * probe) may call processReplacing with in == NULL; treat a missing input channel as silence. */
@@ -545,6 +618,7 @@ static void process(AEffect *e, float **in, float **out, int32_t n) { run_block(
 #else
 static void run_block(AEffect *e, float **out, int32_t n, int accumulate) {
     wrap_t *w = e->object;
+    flush_pend0(e);   /* parameter 0, set since the last block (setParameter) */
     housekeeping(e, n);
 #if SAMPLE_ACCURATE
     render_events(w, out, n, accumulate);
@@ -689,6 +763,7 @@ static intptr_t dispatcher(AEffect *e, int32_t op, int32_t idx, intptr_t v, void
     case effGetParamDisplay: {
         char buf[PARAM_TEXT_MAX > 64 ? PARAM_TEXT_MAX : 64];
         if (idx < 0 || idx >= NPARAMS) return 0;
+        if (idx == 0) flush_pend0(e);
         const param_t *pp = &PARAMS[idx];
         char k2[96];
         snprintf(k2, sizeof k2, "%s_display", pp->key);
@@ -721,7 +796,7 @@ static intptr_t dispatcher(AEffect *e, int32_t op, int32_t idx, intptr_t v, void
             }
         return 1;
     }
-    case effSetProgram: set_program(w, (int)v); return 1;
+    case effSetProgram: flush_pend0(e); set_program(w, (int)v); return 1;
     case effGetProgram: return NUM_PROGRAMS ? get_program(w) : 0;
     case effGetProgramName: program_name(w, NUM_PROGRAMS ? get_program(w) : -1, p); return 1;
     case effGetProgramNameIndexed: program_name(w, idx, p); return idx >= 0 && idx < NUM_PROGRAMS;
@@ -729,6 +804,7 @@ static intptr_t dispatcher(AEffect *e, int32_t op, int32_t idx, intptr_t v, void
         return (!strcmp(p, "receiveVstEvents") || !strcmp(p, "receiveVstMidiEvent") ||
                 !strcmp(p, "receiveVstTimeInfo")) ? 1 : -1;
     case effGetChunk: {
+        flush_pend0(e);
         /* LXRXXL: the engine answers with the length it needs (NUL included); grow and ask again when it is larger */
         int len = eng_get(w, "state", w->chunk ? w->chunk : (char *)"", w->chunk ? w->chunkCap : 0);
         if (len <= 0) return 0;
@@ -753,6 +829,7 @@ static intptr_t dispatcher(AEffect *e, int32_t op, int32_t idx, intptr_t v, void
         }
         memcpy(w->chunk, p, v);
         w->chunk[v] = 0;
+        __atomic_store_n(&w->has_pend0, 0, __ATOMIC_RELEASE);   /* a restore sets parameter 0 too */
         eng_set(w, "state", w->chunk);
         return 1;
     }
@@ -765,6 +842,9 @@ __attribute__((visibility("default"))) AEffect *VSTPluginMain(audioMasterCallbac
     if (!g_api) return NULL;
 #ifdef PLUG_EFFECT
     if (!g_api->process) return NULL;   /* an effect port must provide process() */
+#endif
+#if HAS_SONG_POS
+    if (!g_api->song_pos) return NULL;  /* a HAS_SONG_POS port must provide song_pos() */
 #endif
     wrap_t *w = calloc(1, sizeof *w);
     if (!w) return NULL;

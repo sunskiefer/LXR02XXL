@@ -241,7 +241,8 @@ class SitePublishesManifest(unittest.TestCase):
             self.assertIn(p["script"]["sha256"], overview)
             self.assertIn('href="patch-%s.html"' % p["id"], overview)
             self.assertTrue(os.path.isfile(os.path.join(site, "patch-%s.html" % p["id"])))
-            self.assertNotIn('href="patch-%s.html"' % p["id"], index)   # guides are reached from the overview, not the menu
+            self.assertNotIn('href="patch-%s.html"' % p["id"], index.split("<main")[0])   # guides are not in the menu
+            self.assertIn('href="patch-%s.html"' % p["id"], index)   # but the Device patches tab on the catalog page links them
 
     def test_an_invalid_manifest_fails_the_site_build(self):
         bad = os.path.join(tempfile.mkdtemp(), "patches.json")

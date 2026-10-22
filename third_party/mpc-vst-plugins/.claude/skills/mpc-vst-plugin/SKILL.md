@@ -27,6 +27,8 @@ Stop any separately attached audio engines first.
    params table from the port's parameter list (`tools/params.py`; VST index = order), the skin folder `<vendor> - VST - <name>/`
    (from vst.json's `layout`, else a studio auto-layout) and `pluginlist-entry.xml`. The compile uses
    `arm32v7/gcc:11-bullseye` (glibc 2.31; MPC OS 2.x has 2.32, so `catalog_check.py` lists anything above 2.32, up to 2.36, as MPC OS 3.x only and rejects above 2.36), `-fvisibility=hidden -shared -fPIC`, and links `wrapper/vst2_wrap.c` from this repo.
+   Gen2: vst.json `"targets": ["armv7", "aarch64"]` also builds `build/aarch64/<so>` (`arm64v8/gcc:12-bookworm`); `build_port.sh vst.json aarch64`
+   builds just that, `test_port.sh vst.json aarch64` runs the host test in an arm64 container; `release.py` once per `.so`; docs/GEN2.md.
 3. **Bench**: `tools/bench.sh build/x.so <ip>` must PASS before release (docs/BENCH.md).
 4. **Offline test first**: `tools/test_port.sh <port>/vst.json` builds `tools/host_test.c` with the port's sources and
    adapter on x86 under ASan/UBSan and must print PASSED: two instances, names, set/get, option select + nudge, stepping (wheel, Q-Link, sweep, reversal),
@@ -90,10 +92,21 @@ the plugin (`poc/midiport.c`: `snd_seq_open` → `snd_seq_create_simple_port` RE
 link `-lasound`; build needs `apt install libasound2-dev` in the arm32v7/gcc:11-bullseye container). MPC hot-detects the
 port with no restart; the user enables Track on it in Preferences → MIDI. Sync from `audioMasterGetTime` ppqPos/tempo.
 **Step timing (read `docs/MIDI_TIMING.md`):** derive every step from `ppqPos` (16th `k` at `k/4`, swing as a ppq delay on odd
-`k`, re-cover the straddling block on a loop wrap, resync on a jump, first boundary at/after the playhead is step 0). Do **not**
+`k`, resync on a jump, first boundary at/after the playhead is step 0). **Send each block's steps at its start, for
+`[ppqPos, ppqPos + blk)`** (a high-water mark of what was sent), not the block that just played: that is a block (~2.9 ms) late
+and users add track delay to compensate. MPC reports its loop (`kVstCyclePosValid`, `cycleStartPos/EndPos`) and the block
+before a wrap covers the loop end: split it there and continue from the loop start. `ppqPos` jitters up to 0.0009 beat. Do **not**
 synthesize 24-PPQN pulses and count them: the phase becomes relative and a lost pulse, mid-song start or loop wrap shifts it
-permanently. Never pace from the wall clock. Test with a block-misaligned loop and a mid-song start in `host_test`; keep file
-I/O out of `processReplacing`. Reference: `mpc-vst-acid` `feed_transport()`.
+permanently. Never pace from the wall clock. A tempo change moves `ppqPos` back a little: a backward step under 1 beat is
+not a loop wrap (hold the high-water mark). Make the **pattern position** a function of the song position too (hand the
+core the absolute 16th index; skip indices already fired), or fast tempo changes shift the pattern until Stop/Start.
+Test with a block-misaligned loop, a mid-song start and tempo lurches in `host_test`; keep file I/O out of
+`processReplacing`. Reference: `mpc-vst-acid` `feed_transport()`/`play_span()`; `transport_grid.h` (Euclidier 1.0.7). MPC's track Mute does not reach an ALSA-port
+generator: add a plugin Mute (drop note-ons, pass note-offs, keep running). A plugin that spawns an engine process
+needs a watchdog (exit/hang -> respawn with cached params + SPP), child stdio to `/dev/null`, and `steady_clock` timers
+(`mpc-vst-euclidier` 1.0.5). Details: `docs/MIDI_TIMING.md`.
+On the shared wrapper (not a hand-written one) `"defines": {"HAS_SONG_POS": 1}` hands the engine `ppqPos`, tempo and play state each block
+through `song_pos()` (`wrapper/engine.h`, test engine `poc/songpos`; offline only so far).
 Name ports plainly (e.g. client "<Plugin>", port "MIDI Out"): no "(Mockba)" suffix; the user wants MockbaMod
 references kept out of mpc-vst.
 
@@ -159,6 +172,10 @@ Parameter entries feeding `gen_vst.py` (`tools/params.py` format) can carry:
 - A `"display": "string"` param is polled every 10 ms for `<key>_on` (list tiles lit from MIDI) and every 100 ms
   for text changes (readouts refreshed without a tap); `"poll": false` on the param turns that off for one
   whose text only changes on a tap or whose `get_param()` is costly.
+- A host write (a Q-Link, automation, a touch) sends no `audioMasterUpdateDisplay`: MPC rebuilds its parameter screen
+  on each one, which broke Q-Links on the automation screen (NOTES 2026-10-21). Polled readouts catch up within 100 ms.
+  A param that other unpolled text depends on (a machine selector behind `dynamic_name` labels, a `"poll": false`
+  readout bound with `get=`) takes `"refresh_display": true` to ask for one on its writes. `step_of` buttons always ask.
 - `vst.json`'s `"tile"` (a 270x110 PNG) becomes `Plugin Skins/browser_images/soundsmode.png` plus
   `Presets/0000-Default.xpl` in the skin folder (`tools/xpl.py`): the Sounds > INSTRUMENTS browser draws the
   artwork and a tap opens the plugin. MPC indexes `Presets/` at startup, so a new preset file needs a restart.

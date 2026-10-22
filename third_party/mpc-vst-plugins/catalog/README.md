@@ -6,7 +6,8 @@ Design: `docs/CATALOG.md`. Formats: `docs/CATALOG_SPEC.md`.
 ## Add your plugin
 1. Make a release zip with `tools/release.py` (or the `vst-release.yml` workflow) with `--repo owner/name --license <SPDX>`,
    and check it: `tools/catalog_check.py <zip> --catalog`. Publish it as a GitHub release on your repo.
-2. Open a PR adding `catalog/plugins/<id>.json` (the `<id>` in your manifest):
+2. Open a PR adding `catalog/plugins/<id>.json` (the `<id>` in your manifest; a file directly in `catalog/` is never read, and
+   `--check-registry` fails on it):
    ```json
    { "id": "my-synth", "name": "My Synth", "author": "Your name", "repo": "you/my-synth-vst",
      "kind": "instrument", "license": "MIT", "summary": "One line.",
@@ -23,9 +24,25 @@ Design: `docs/CATALOG.md`. Formats: `docs/CATALOG_SPEC.md`.
 Open-source licenses (list in `tools/catalog_build.py`) or public source with `source_available` set. No versions or
 checksums go in the entry.
 
+**Skins and branding.** A listed plugin's skin, screenshot and name must not use another company's name or logo: no
+manufacturer logos or wordmarks, no logo-bearing front-panel artwork, no trademarked product art, no manufacturer's name as
+the plugin's title. The summary and tags may name what you model in a descriptive way ("Minimoog-style", "inspired by the
+LXR-02"), as long as they don't suggest the original maker made or endorses it. Put the full credit in your repo's README. A listing found to break this is removed by a PR that deletes `catalog/plugins/<id>.json`; once the
+skin and screenshot are clean, re-add the entry with a new PR (the same one-file change as the first listing).
+
 ## Addins
 An addin (a library MPC loads when it starts, through `LD_PRELOAD`) is listed the same way, with `"kind": "addin"` in its
 entry. Package it with `tools/release_addin.py` instead of `release.py`: see `docs/ADDINS.md`.
+
+## Companion apps
+A desktop tool that works with a standalone MPC but is not a plugin (for example MPC Link) is listed on the site's **Companion apps**
+tab from `catalog/apps.json`, not from `catalog/plugins/`. Open a PR adding one object to `apps`: `id`, `title`, `summary`, `author`,
+`license` (open source), `repo` (`owner/name`), `release` (https link to the release page), `platforms` (`macos`, `windows`, `linux`),
+and `assets` (`{platform, label, pattern}` rules, for example `MyApp-*-macOS.zip`), plus optional `version`, `needs` (list) and `tested` (`{device, os}`).
+The nightly build reads your newest stable GitHub release and fills in the download links, version and sha256 (from the asset's digest, or a `SHA256SUMS`
+file in the release), so a new release needs no PR here; `tested` is the one thing you update by hand. Without `assets`, give `release` and pin `downloads`
+(`{platform, label, url, sha256}`) yourself. `python3 tools/app_check.py` checks the file; `python3 tools/app_resolve.py --out /tmp/x` shows what the build would publish.
+Nothing is installed on the device by the catalog or the installer app: the card only links to your release.
 
 ## If your plugin can't publish a zip: build-yourself
 Some ports compile the user's own firmware into the plugin (for example a DSP statically recompiled from an Elektron OS
@@ -54,8 +71,35 @@ firmware-derived data and must not be shared. `{tag}` in `docs_url` becomes the 
 Optional `tested.json` at the root of your repo's default branch; the nightly build shows it as "Tested on" for the
 matching release:
 ```json
-[ { "version": "1.2.0", "device": "MPC Live II", "firmware": "3.6.0", "date": "2026-09-29" } ]
+[ { "version": "1.2.0", "device": "MPC Live II", "firmware": "3.6.0", "date": "2026-09-29" },
+  { "version": "1.2.0", "device": "MPC Live III (Gen2)", "firmware": "5.0.18", "date": "2026-10-11" } ]
 ```
+A test of your Gen2 (aarch64) build needs "Gen2" in `device`, as in the second line; any other device counts as Gen1.
+
+## Trust tiers
+Every plugin has one tier, worked out by the nightly build (nobody sets it by hand). Only Verified and Experimental get a badge on
+the card: a plugin with no badge is simply in the catalog (the Listed tier), and the Tier filter calls it "Not yet verified".
+- **Verified**: the newest stable release has a `tested.json` entry (above). Say on what, and tell the truth: an entry is a claim
+  a maintainer may ask you to back up. Each generation gets its own badge: **Verified Gen1** for a test on a Gen1 device,
+  **Verified Gen2** for a test on a Gen2 device (only when that release has a Gen2 build). The Tier filter can pick either.
+- **Listed** (no badge): the release passed the catalog checks, but no hardware test is recorded for the newest release. This is where a
+  plugin stays until you add a `tested.json` entry, and where it returns when you release a new version without testing it.
+- **Experimental**: no stable release yet (a beta alone counts), or a maintainer capped the entry with `"tier": "experimental"`
+  (for example a bulk port nobody has run). Hidden from the default catalog view, shown by the Tier filter.
+
+The default sort ("Recommended") lists featured plugins, then Verified, then Listed. Within a tier, ties go to Verified on both generations, then the newest hardware-test date, then downloads, then name. `"featured": true` in the
+registry entry is a maintainer's pick and is ignored for Experimental plugins. A listing can be capped, never raised, by the
+registry: `"tier"` accepts only `"experimental"`.
+
+## Improve your listing
+Each card has a collapsed "To improve this listing" list of what your plugin does not meet yet. It is advice, never a block: nothing
+is hidden or demoted because of it. The items:
+- publish a **stable** release (a beta alone makes the plugin Experimental)
+- add a **screenshot** (the `screenshot` link in your registry entry)
+- ship a native **skin** (instruments and effects)
+- run the **CPU bench** (`docs/BENCH.md`; `release.py` records the figure), and bring the CPU down if the verdict is FAIL
+- add a **`tested.json`** entry for your newest release (this is what makes a plugin Verified), and one on a Gen2 device if the release has
+  a Gen2 build
 
 ## Feed
 The site publishes `feed.xml` (Atom, newest 50 non-yanked releases).
@@ -65,13 +109,14 @@ Add `"<id>@<version>"` (or `"<id>@*"` for all versions) to `yanked.json`. It sta
 never offered as the latest.
 
 ## Build locally
-`python3 tools/catalog_build.py --check-registry` validates entries; without the flag it fetches releases (set
+`python3 tools/catalog_build.py --check-registry` validates entries (and fails on any `*.json` directly in `catalog/` other than
+`apps.json`, `patches.json` and `yanked.json`: an entry put one folder too high); without the flag it fetches releases (set
 `GITHUB_TOKEN` to avoid API limits) and writes `catalog/dist/catalog.json` and `problems.json`.
 In `problems.json`, `superseded: true` marks a failing release that a newer, unyanked release of the same plugin
 replaces. `python3 tools/catalog_issues.py --dry-run` shows the issues the nightly would open and close.
 `python3 tools/catalog_site.py` then writes the site to `catalog/dist/site/` (open `index.html`).
 
 ## Guide pages
-The site's Install, Build, Workflow and Add yours pages are the Markdown files in `catalog/pages/`. Edit one and
+The site's Install, Build and Workflow pages are the Markdown files in `catalog/pages/`. Edit one and
 the next site build publishes it. A page starts with front matter (`title`, `nav` for the menu label, `order`,
 `summary`); a new file is added to the menu automatically. The Markdown subset is described in `tools/catalog_md.py`.
