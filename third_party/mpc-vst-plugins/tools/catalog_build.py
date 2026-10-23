@@ -435,6 +435,10 @@ def build(entries, src, cache, yanked, keep=10, now=None, require_portable=()):
             except Exception as ex:
                 failed.append(({"id": e["id"], "tag": tag, "error": "download/validate failed: %s" % ex}, pub))
                 continue
+            pattern = e.get("asset_pattern", "*-mpc-armv7.zip")
+            gen2_only = "aarch64" in pattern and "armv7" not in pattern   # a plugin with only a Gen2 build (docs/GEN2.md)
+            if not errors and gen2_only and rec["manifest"].get("arch") != "aarch64":
+                errors = ["the entry's asset_pattern is for the Gen2 build, but %s is arch %s" % (asset["name"], rec["manifest"].get("arch"))]
             if not errors and (rec["manifest"]["kind"] == "addin") != (e["kind"] == "addin"):
                 errors = ["the release is a%s but the registry entry's kind is %s" % (
                     "n addin" if rec["manifest"]["kind"] == "addin" else " plugin", e["kind"])]
@@ -446,18 +450,23 @@ def build(entries, src, cache, yanked, keep=10, now=None, require_portable=()):
                 continue
             # Gen2: an optional sibling asset (armv7 -> aarch64 in the pattern) built from the same tag. It must pass the same checks
             # and agree with the armv7 zip on id, uid and version; a bad one is reported but never hides the Gen1 release.
-            rec["assets"] = {"armv7": {k: rec[k] for k in ("sha256", "size") if k in rec} | {"url": asset["browser_download_url"]}}
+            rec["assets"] = {("aarch64" if gen2_only else "armv7"): {k: rec[k] for k in ("sha256", "size") if k in rec} | {"url": asset["browser_download_url"]}}
+            if gen2_only:   # the one zip IS the Gen2 build: url/sha256/size stay it (schema-1 readers), gen2_only tells the clients not to offer it on Gen1
+                rec["gen2"] = True
+                rec["gen2_only"] = True
             pat64 = e.get("asset_pattern", "*-mpc-armv7.zip").replace("armv7", "aarch64")
             # a pattern with no "armv7" in it has no aarch64 sibling (it would match the armv7 zip again)
-            a64 = [x for x in rel.get("assets", []) if fnmatch.fnmatch(x["name"], pat64)] if pat64 != e.get("asset_pattern", "*-mpc-armv7.zip") else []
+            a64 = [x for x in rel.get("assets", []) if fnmatch.fnmatch(x["name"], pat64)] if pat64 != e.get("asset_pattern", "*-mpc-armv7.zip") and not gen2_only else []
             if len(a64) == 1:
                 z64 = os.path.join(cache, "%s-%s.zip" % (e["id"], a64[0]["id"]))
                 try:
                     if not os.path.exists(z64):
                         src.download(a64[0], z64)
                     err64, warn64, rec64 = catalog_check.check(z64, catalog=True, expect_id=e["id"], expect_repo=e["repo"])
+                    # an addin's manifest has no "uid" (that's a VST plugin's concept, for save-file compatibility
+                    # across generations); expect_id above already ties both zips to the same catalog entry
                     if not err64 and (rec64["manifest"]["arch"] != "aarch64" or rec64["version"] != rec["version"]
-                                      or rec64["manifest"]["uid"] != rec["manifest"]["uid"]):
+                                      or rec64["manifest"].get("uid") != rec["manifest"].get("uid")):
                         err64 = ["aarch64 zip is not arch aarch64 with the same version and uid as the armv7 zip"]
                 except Exception as ex:
                     err64 = ["download/validate failed: %s" % ex]

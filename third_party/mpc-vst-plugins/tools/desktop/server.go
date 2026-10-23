@@ -31,12 +31,14 @@ type App struct {
 	verInfo     versionInfo
 	work        string
 
-	mu      sync.Mutex
-	dev     *Device
-	uploads map[string]*Package
-	cat     []CatPlugin
-	catAt   time.Time
-	job     *Job
+	mu        sync.Mutex
+	dev       *Device
+	uploads   map[string]*Package
+	cat       []CatPlugin
+	catAt     time.Time
+	job       *Job
+	stickJob  *Job                  // the USB-stick builder's own job slot: independent of a device connection
+	stickScan map[string]*stickScan // salt-scan results, by handle
 
 	patches   []Patch
 	patchesAt time.Time
@@ -47,7 +49,7 @@ type App struct {
 func NewApp(cfg Config, token, hostport, catalogURL, work string) *App {
 	port := hostport[strings.LastIndex(hostport, ":")+1:]
 	return &App{cfg: cfg, token: token, catalogURL: catalogURL, releasesURL: defaultReleasesURL, patchesURL: patchesURLFor(catalogURL), work: work, uploads: map[string]*Package{}, patchCode: map[string][]byte{},
-		hosts: map[string]bool{"127.0.0.1:" + port: true, "localhost:" + port: true}}
+		stickScan: map[string]*stickScan{}, hosts: map[string]bool{"127.0.0.1:" + port: true, "localhost:" + port: true}}
 }
 
 func (a *App) Handler() http.Handler {
@@ -72,6 +74,12 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("/api/job", a.jobStatus)
 	mux.HandleFunc("/api/patches", a.patchList)
 	mux.HandleFunc("/api/patch/run", a.patchRun)
+	mux.HandleFunc("/api/stick/scan", a.stickScanStart)
+	mux.HandleFunc("/api/stick/job", a.stickJobStatus)
+	mux.HandleFunc("/api/stick/keygen", a.stickKeygen)
+	mux.HandleFunc("/api/stick/build", a.stickBuild)
+	mux.HandleFunc("/api/browse", a.browse)
+	mux.HandleFunc("/api/drives", a.drives)
 	return a.guard(mux)
 }
 

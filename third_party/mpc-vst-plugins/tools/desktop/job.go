@@ -39,6 +39,14 @@ func (j *Job) finish(err error) {
 	}
 }
 
+// finishWithResult is finish(nil) but with a caller-chosen Result instead of the default "Done." -- for a job whose
+// success carries data the page needs (e.g. stickScanStart's scan handle), not just a status line.
+func (j *Job) finishWithResult(result string) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	j.State, j.Result = "done", result
+}
+
 // snapshot returns the state and the lines after `since`.
 func (j *Job) snapshot(since int) (state string, lines []string, next int, result string) {
 	j.mu.Lock()

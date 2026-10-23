@@ -131,6 +131,10 @@ newest first. A record is what `catalog_check.py --json` prints (`version`, `siz
 and `tested` (`[{device, firmware, date}]`), added by the builder. `tier` is `verified`|`listed`|`experimental`; `verified_on`
 (`[]`, or `gen1` and/or `gen2`) says which device generations the newest stable release was tested on: a `tested` device naming Gen2 is
 `gen2` (only on a version with an aarch64 build), any other is `gen1`. Readers must treat a missing `verified_on` on a verified plugin as `["gen1"]`.
+A version may also carry `assets.aarch64` and `gen2: true` (a Gen2 build beside the armv7 zip, docs/GEN2.md). **Gen2 only:** an entry whose `asset_pattern` names the
+aarch64 zip and no armv7 one (`"*-mpc-aarch64.zip"`) lists that zip alone: `assets: {aarch64: {...}}`, `gen2: true`, `gen2_only: true`, and `url`/`sha256`/`size` are the
+aarch64 zip (a reader that knows no `gen2_only` still parses it); in `catalog.tsv` the size, sha256 and url columns are `-`. A client on a Gen1 device or a Force must not offer a
+`gen2_only` version. The zip's manifest `arch` must be `aarch64`.
 `defer` is true when the zip's `install.sh` understands `-n` (the caller stops and starts MPC), false for an older installer that restarts MPC by
 itself; batch installers (the desktop app, `mpc-store.sh`) run such a zip separately and use the flag to say how often MPC will restart.
 

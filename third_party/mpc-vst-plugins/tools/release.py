@@ -96,9 +96,7 @@ sub = {"@NAME@": name, "@SO_NAME@": so_name, "@SKIN@": skin_name,
        "@UID@": attr["uid"], "@LEGACY_SO@": legacy_so, "@USER_DATA@": " ".join(a.user_data)}
 for script in ("install.sh", "uninstall.sh"):
     text = open(os.path.join(HERE, "release", script)).read()
-    for k, v in sub.items():   # inside '...' a quote must be closed, escaped and reopened: L'Cronx -> L'\''Cronx
-        if k != "@EXTRAS@":    # (EXTRAS holds its own quoted words)
-            text = text.replace("'%s'" % k, "'%s'" % v.replace("'", "'\\''"))
+    for k, v in sub.items():
         text = text.replace(k, v)
     p = os.path.join(root, script)
     open(p, "w", newline="\n").write(text)

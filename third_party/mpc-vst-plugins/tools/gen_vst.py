@@ -109,7 +109,33 @@ def check_lock(here, plist):
     print("params.lock: %d keys" % len(keys))
 
 
-def gen_params(cfg, params, out):
+def shown_keys(cfg, here, plist):
+    """The param keys the skin's layout mentions anywhere (a widget's key=, get=, when=, a list, a qlinks line), or None when that
+    can't be known (no layout: the auto-layout shows everything; custom_skin / skin_post: something else touches the skin; a widget
+    value with a pattern such as %d). A "display":"string" param outside it is never polled (gen_params), unless "poll": true."""
+    if not cfg.get("layout") or cfg.get("custom_skin") or cfg.get("skin_post"):
+        return None
+    import re
+    import shadow_skin
+    tabs, top = shadow_skin.parse_layout(os.path.join(here, cfg["layout"]))
+    texts = list(top)
+    for t in tabs:
+        for w in t["widgets"]:
+            for v in w.values():
+                texts.append(",".join(x if isinstance(x, str) else ",".join(str(y) for y in x) for x in v) if isinstance(v, list)
+                             else v if isinstance(v, str) else "")
+        for _, ks in t["qlinks"]:
+            texts.append(",".join(ks))
+    if any(c in x for x in texts for c in "%*{$"):
+        return None
+    words = set()
+    for x in texts:
+        words.update(re.findall(r"[A-Za-z0-9_]+", x))
+    # a list widget's key=bank_slot stands for bank_slot_1 .. bank_slot_N (its tiles), so a trailing _<number> counts as mentioned too
+    return {p["key"] for p in plist if p["key"] in words or re.sub(r"_\d+$", "", p["key"]) in words}
+
+
+def gen_params(cfg, params, out, shown=None):
     for w in layout_warnings(cfg):
         print("warning: " + w, file=sys.stderr)
     sn = cfg.get("short_names", {})
@@ -157,8 +183,10 @@ def gen_params(cfg, params, out):
         qticks = int(p.get("qlink_ticks", 0))
         # "poll": false -- a "display":"string" param the wrapper should not poll for "<key>_on" (every 10 ms) and
         # for text changes (every 100 ms; housekeeping in vst2_wrap.c): a readout that only changes on a tap, or
-        # one whose get_param() is costly.
-        no_poll = int(p.get("poll", True) is False)
+        # one whose get_param() is costly. Left out of the polling too, without saying so: one the layout never mentions
+        # (shown_keys); "poll": true polls it anyway (for example text the automation screen lists but the skin does not).
+        # A param the layout never mentions has nothing on screen to refresh, so it is not polled either ("poll": true keeps it).
+        no_poll = int(p.get("poll", True) is False or (is_str and "poll" not in p and shown is not None and p["key"] not in shown))
         # "nudge_pct" -- for a long "display": "int" list (a bank list of up to 998): any move up to this percent of the range
         # (a Q-Link event is 1/128 of it, a wheel click 1/100) is ONE step in its direction instead of crossing eight to ten
         # entries; a bigger move (automation, a drag) still sets the value outright. 0 = off. Combine with qlink_ticks to
@@ -327,8 +355,10 @@ def main():
     if cfg.get("layout"):
         plist = plist + shadow_skin.popup_params(os.path.join(here, cfg["layout"]), plist)
     os.makedirs(build, exist_ok=True)
-    gen_params(cfg, plist, os.path.join(build, "params.h"))
-    print("params.h: %d params" % len(plist))
+    shown = shown_keys(cfg, here, plist)
+    gen_params(cfg, plist, os.path.join(build, "params.h"), shown)
+    skipped = [p["key"] for p in plist if p.get("display") == "string" and "poll" not in p and shown is not None and p["key"] not in shown]
+    print("params.h: %d params%s" % (len(plist), "; %d text param(s) the layout never shows are not polled" % len(skipped) if skipped else ""))
     if sys.argv[2:] == ["--params-h"]:
         return
     open(os.path.join(build, "pluginlist-entry.xml"), "w").write(entry(cfg) + "\n")

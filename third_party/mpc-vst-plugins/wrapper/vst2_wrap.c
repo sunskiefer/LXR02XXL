@@ -134,7 +134,11 @@ typedef struct {
     float qacc[NPARAMS];     /* qlink_ticks: turn events counted toward the next step (see setParameter) */
     signed char last_on[NPARAMS];  /* last "<key>_on" value told to the host, +1 (0 = unknown, -1 = the engine has no such key) */
     unsigned last_text[NPARAMS];   /* hash of a text readout's last value (see housekeeping) */
-    int on_poll, text_poll;        /* frames until the next "<key>_on" poll / readout poll (see housekeeping) */
+    short poll_list[NPARAMS]; int npoll;   /* the polled params: "display":"string" without "poll":false (see housekeeping) */
+    int n_on;                      /* of those, how many may still have a "<key>_on" (not yet answered -1) */
+    int on_acc, text_acc;          /* poll work owed, in frames x params; a visit costs 441 / 4410 of it */
+    int on_cur, text_cur;          /* where the next visit continues in poll_list */
+    int rev_poll;                  /* HAS_DISPLAY_REV: frames until the next display_rev read (every 100 ms) */
     int playing;             /* HAS_TRANSPORT: last transport state sent */
     double ppq;              /* HAS_TRANSPORT: song position at the last block, to spot a jump back */
     volatile char need_update_display;  /* deferred audioMasterUpdateDisplay -- see setParameter() */
@@ -489,17 +493,28 @@ static void housekeeping(AEffect *e, int32_t n) {
      *   so push a change with audioMasterAutomate (a tile lights while the pad is held);
      * - a readout's text, every 100 ms: the host only re-reads it on UpdateDisplay, so ask for one when the text
      *   changed (a chord name on a page without tiles stayed stale until something else was tapped).
-     * Only "display":"string" params without "poll":false are polled. A "<key>_on" the engine does not answer is
-     * asked once, then skipped. The two countdowns run independently of the block size; a readout that changes
-     * constantly (a clock) asks for at most 10 UpdateDisplays a second. Costs about one get_param per polled param per poll on the
-     * audio thread; docs/BENCH.md measures it (Chordsmith, 10 polled params: idle p99 under 4% of a block). */
-    int poll_on = (w->on_poll -= n) <= 0, poll_text = (w->text_poll -= n) <= 0;
-    if (poll_on && (w->on_poll += 441) <= 0) w->on_poll = 441;        /* keep the remainder, so the rate holds */
-    if (poll_text && (w->text_poll += 4410) <= 0) w->text_poll = 4410;   /* for any block size */
-    for (int i = 0; (poll_on || poll_text) && i < NPARAMS; i++) {
-        if (!PARAMS[i].string_display || PARAMS[i].no_poll) continue;
-        char k2[96], b2[64];   /* 64: the hash sees the first 63 characters, enough for a 47-character readout */
-        if (poll_on && w->last_on[i] >= 0) {
+     * Only "display":"string" params without "poll":false are polled (gen_vst.py also leaves out the ones the layout never
+     * mentions). A "<key>_on" the engine does not answer is asked once, then skipped. The work is spread: each block visits its
+     * share of the list, resuming where the last block stopped, so every param is still read about once per 10 / 100 ms
+     * but no block reads them all (at most one pass per block, whatever the block size). A readout that changes
+     * constantly (a clock) asks for at most 10 UpdateDisplays a second. Costs about one get_param per polled param per poll
+     * on the audio thread; docs/BENCH.md measures it (Chordsmith, 10 polled params: idle p99 under 4% of a block). */
+    int poll_rev = (w->rev_poll -= n) <= 0;
+    if (poll_rev && (w->rev_poll += 4410) <= 0) w->rev_poll = 4410;   /* for any block size */
+    if (w->npoll) {
+        int on_k = 0, text_k = 0;
+        if (w->n_on > 0) { w->on_acc += n * w->n_on; on_k = w->on_acc / 441; w->on_acc -= on_k * 441; if (on_k > w->n_on) on_k = w->n_on; }
+        w->text_acc += n * w->npoll; text_k = w->text_acc / 4410; w->text_acc -= text_k * 4410;
+        if (text_k > w->npoll) text_k = w->npoll;
+        for (int k = 0; k < on_k; k++) {
+            int i = -1;
+            for (int t = 0; t < w->npoll && i < 0; t++) {   /* the next param that may have a "<key>_on" */
+                int j = w->poll_list[w->on_cur];
+                w->on_cur = (w->on_cur + 1) % w->npoll;
+                if (w->last_on[j] >= 0) i = j;
+            }
+            if (i < 0) break;
+            char k2[96], b2[64];
             snprintf(k2, sizeof k2, "%s_on", PARAMS[i].key);
             if (eng_get(w, k2, b2, sizeof b2) > 0) {
                 int on = atoi(b2) ? 1 : 0;
@@ -508,19 +523,26 @@ static void housekeeping(AEffect *e, int32_t n) {
                     w->master(&w->fx, audioMasterAutomate, i, 0, 0, (float)on);
                     w->need_update_display = 1;
                 }
-            } else
+            } else {
                 w->last_on[i] = -1;
+                w->n_on--;
+            }
         }
-        if (poll_text && eng_get(w, PARAMS[i].key, b2, sizeof b2) > 0) {
-            unsigned h = 2166136261u;   /* FNV-1a */
-            for (const char *s = b2; *s; s++) h = (h ^ (unsigned char)*s) * 16777619u;
-            if (h != w->last_text[i]) {
-                w->last_text[i] = h;
-                w->need_update_display = 1;
+        for (int k = 0; k < text_k; k++) {
+            int i = w->poll_list[w->text_cur];
+            w->text_cur = (w->text_cur + 1) % w->npoll;
+            char b2[64];   /* 64: the hash sees the first 63 characters, enough for a 47-character readout */
+            if (eng_get(w, PARAMS[i].key, b2, sizeof b2) > 0) {
+                unsigned h = 2166136261u;   /* FNV-1a */
+                for (const char *c = b2; *c; c++) h = (h ^ (unsigned char)*c) * 16777619u;
+                if (h != w->last_text[i]) {
+                    w->last_text[i] = h;
+                    w->need_update_display = 1;
+                }
             }
         }
     }
-    if (HAS_DISPLAY_REV && poll_text) {
+    if (HAS_DISPLAY_REV && poll_rev) {
         char rev[16];
         if (eng_get(w, "display_rev", rev, sizeof rev) > 0 && strcmp(rev, w->last_rev)) {
             snprintf(w->last_rev, sizeof w->last_rev, "%s", rev);
@@ -831,6 +853,9 @@ __attribute__((visibility("default"))) AEffect *VSTPluginMain(audioMasterCallbac
     w->dsp = g_api->create(MODULE_DIR);
 #endif
     if (!w->dsp) { pthread_mutex_destroy(&w->lock); free(w); return NULL; }
+    for (int i = 0; i < NPARAMS; i++)
+        if (PARAMS[i].string_display && !PARAMS[i].no_poll) w->poll_list[w->npoll++] = (short)i;
+    w->n_on = w->npoll;
     w->master = master;
     w->pos = DSP_BLOCK;
     for (int i = 0; i < NPARAMS; i++) w->last_pos[i] = w->last_norm[i] = -1;

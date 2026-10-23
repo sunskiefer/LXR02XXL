@@ -61,8 +61,11 @@ func TestForArchPicksTheZipForTheDevice(t *testing.T) {
 	if c, err := by["gen1"].ForArch("armv7l"); err != nil || c.URL != "https://example.com/g1.zip" {
 		t.Errorf("Gen1-only on Gen1: %+v %v", c, err)
 	}
-	if _, err := (CatPlugin{Kind: "addin", Name: "A", Aarch64: &Asset{}}).ForArch("aarch64"); err == nil {
-		t.Error("addins are armv7 only")
+	if c, err := (CatPlugin{Kind: "addin", Name: "A", Version: "1.0.0", Aarch64: &Asset{URL: "https://example.com/a-aarch64.zip"}}).ForArch("aarch64"); err != nil || c.URL != "https://example.com/a-aarch64.zip" {
+		t.Errorf("an addin WITH a Gen2 build must be accepted like any other plugin: %+v %v", c, err)
+	}
+	if _, err := (CatPlugin{Kind: "addin", Name: "A", Version: "1.0.0"}).ForArch("aarch64"); err == nil {
+		t.Error("an addin with no Gen2 build must still be refused")
 	}
 }
 
@@ -206,5 +209,22 @@ func TestSynthsAltIsIgnoredWhenTheConfiguredPrimaryExists(t *testing.T) {
 	}
 	if p.Path != cfg.SynthsDir {
 		t.Errorf("primary should be the configured SynthsDir, got %+v", p)
+	}
+}
+
+func TestAGen2OnlyVersionIsRefusedOnGen1(t *testing.T) {
+	raw := `{"schema":1,"plugins":[{"id":"g2","name":"G2","author":"a","kind":"instrument","distribution":"release","latest":"1.0.0","versions":[
+	 {"version":"1.0.0","size":20,"sha256":"` + strings.Repeat("b", 64) + `","url":"https://example.com/g2-aarch64.zip","channel":"stable","yanked":false,"gen2":true,"gen2_only":true,
+	  "assets":{"aarch64":{"size":20,"sha256":"` + strings.Repeat("b", 64) + `","url":"https://example.com/g2-aarch64.zip"}}}]}]}`
+	got, err := parseCatalog([]byte(raw))
+	if err != nil || len(got) != 1 || !got[0].Gen2Only || got[0].Aarch64 == nil {
+		t.Fatalf("parse: %+v %v", got, err)
+	}
+	if _, err := got[0].ForArch("armv7l"); err == nil || !strings.Contains(err.Error(), "Gen2 only") {
+		t.Errorf("a Gen1 or Force device must be refused, got %v", err)
+	}
+	c, err := got[0].ForArch("aarch64")
+	if err != nil || c.URL != "https://example.com/g2-aarch64.zip" {
+		t.Errorf("Gen2: %+v %v", c, err)
 	}
 }

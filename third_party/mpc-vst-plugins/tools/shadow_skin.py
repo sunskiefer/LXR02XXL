@@ -67,7 +67,7 @@ images and pictures need the browser renderer.
 Any widget line (frames and art too) can carry `banks="NAME|NAME"`: it is only on those Q-Link sub-pages of its tab
 (the tab's `qlinks` titles), so a sub-page can show and touch-edit what its Q-Links edit; its baked parts become their
 own image on those sub-pages.
-Knobs and sliders take `ns=<px>` / `vs=<px>` (name / value text size; ns=0: no name) and `bw=<px>` (touch box and
+Knobs and sliders take `ns=<px>` / `vs=<px>` (name / value text size; ns=0: no name; vs=0 on a knob: no value text) and `bw=<px>` (touch box and
 text width, e.g. narrower than the usual 130 px where neighbours sit close and their boxes would overlap). `knob ... lay=side [bw= bh= vs=]`: the
 knob's picture at the left of a bw x bh box (default 4 knobs wide), its value (vs= px, default 30) in the rest, no name.
 Toggles take
@@ -939,7 +939,10 @@ def build(layout_path, params, skin_dir, art_bin, png_from_ppm):
                 name_y = s // 2 + r + 2
                 value_y = name_y + name_h + (2 if name_h else 0)
                 value_h = round(26 * LABEL_SCALE) if w.get("vs") is None else max(round(26 * LABEL_SCALE), round(w["vs"] * 1.2))
-                ch = value_y + value_h + 6
+                novalue = w.get("vs") == 0   # vs=0: no value text under the knob (the artwork has its own labels)
+                if novalue:
+                    value_h = 0
+                ch = value_y + value_h + (0 if novalue else 6)
                 radii.add((r, lid))
                 ink, dim = w.get("ink") or INK, w.get("ink_dim") or INK_DIM   # per-control label colours (ink=, ink_dim=)
                 key = "shKnob%d%s%s%s" % (r, sfx, ("_ls%g" % LABEL_SCALE) if LABEL_SCALE != 1.0 else "",
@@ -951,14 +954,14 @@ def build(layout_path, params, skin_dir, art_bin, png_from_ppm):
                     _sub("Knob", {"version": 5, "knobType": "FilmStrip", "filmStrip": "sh_knob_r%d%s.png" % (r, sfx),
                                   "numFrames": ROT_FRAMES, "invert": False, "dragOrientation": "Vertical",
                                   "handleName": "Data"}, _bounds((cw - s) // 2, 0, s, s), "Knob"),
-                    ] + ([_name_label(0, name_y, cw, name_h, nfont, ink)] if name_h else []) + [
+                    ] + ([_name_label(0, name_y, cw, name_h, nfont, ink)] if name_h else []) + ([] if novalue else [
                     _sub("Label", {"version": 1, "textStyle": {"version": 1, "font": {"version": 1, "name": "Titillium Web",
                                                                                      "style": "SemiBold", "height": vfont},
                                                                "colour": "ff" + dim,
                                                                "justification": "horizontallyCentred verticallyCentred",
                                                                "case": "Upper Case"},
                                    "type": "Value", "handleName": "Data"},
-                         _bounds(0, value_y, cw, value_h), "Value")]))
+                         _bounds(0, value_y, cw, value_h), "Value")])))
                 kids.append(_placed(key, name, i, w["cx"] - cw // 2, w["cy"] - s // 2, cw, ch))
             elif kind == "toggle" and lk:
                 tw, th = skin_assets.toggle_size(w, lk)

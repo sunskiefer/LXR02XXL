@@ -9,6 +9,22 @@ It uses the same release zips and the same `install.sh` as every other route (`d
 path. What it adds: a friendly page, one copy of each zip over SSH (as a tar stream, so executable bits and symlinks survive), and
 one MPC stop and start around the whole batch when the installers allow it.
 
+A second, independent mode (the tab at the top, "Plugin install (no SSH or connection needed)") is for a device you have no SSH
+access to yet: it builds the no-SSH autorun stick (`docs/USB_STICK.md`, `tools/usb_stick/*.py` -- this is a Go port of the same
+algorithm, `tools/desktop/stick.go`, so the app needs no Python) from your device's own stock Akai firmware image. It opens with a
+plain explanation of what this is, how it works, and what it's compatible with (MPC OS up to 3.9.1 only; a Gen2 device like the
+Live III needs the stick reinserted after every reboot to redo what it did). Scanning a Gen2 firmware image for the salt it needs
+can take a few minutes (it decompresses the image's xz-compressed rootfs with a pure-Go decoder); the page shows periodic progress
+so it's clear it's still working. The stick's own prompt then installs the plugin manager (so you can browse and install more from
+the MPC screen itself) and reapplies every already-installed addin's `LD_PRELOAD` entry (needed on a device with no persistent
+`/etc`, docs/ADDINS.md). SSH access is a separate, collapsed "Advanced" section, closed by default -- most people don't need it.
+If you do: paste your own public key, have the app generate one (the private half is shown once and never kept), or -- with
+heavier warnings, since it's less secure and needs a writable root (refused outright on most Gen2 units) -- set a password
+instead. None of this needs the device's own SSH yet -- that's the point. Both the firmware path and the output folder have a
+**Browse…** button (`/api/browse`, a server-side folder/file picker, since a browser's own file input never exposes a real path)
+instead of typing one, and the output folder step also lists this computer's mounted drives (`/api/drives`; Linux, macOS and
+Windows): pick a mounted USB stick there and Build writes the stick straight onto it, with nothing left to copy by hand.
+
 ## What it does, in order
 
 1. **Connect:** SSH as root with your password, a key in `~/.ssh` (no passphrase), or neither on a device whose root has no password. It reads the device (32-bit ARM or Gen2 aarch64: Gen2 gets the catalog's aarch64 zips; `tar`?
@@ -104,7 +120,7 @@ The first run is unsigned, so the system warns you once:
 
 ## Build and test
 
-Go 1.26 or newer, one dependency (`golang.org/x/crypto`):
+Go 1.26 or newer, two dependencies (`golang.org/x/crypto`, `github.com/ulikunitz/xz` for the USB-stick mode's salt scan):
 
 ```
 cd tools/desktop

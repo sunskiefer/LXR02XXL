@@ -47,15 +47,19 @@ type CatPlugin struct {
 	Tested2x    bool     `json:"tested_2x"`     // the version has a tested.json entry on MPC OS 2.x firmware
 	Gen2        bool     `json:"gen2"`          // the version also has a Gen2 (aarch64) zip; SHA256/URL/Size above are the Gen1 (armv7) one
 	Aarch64     *Asset   `json:"aarch64,omitempty"`
+	Gen2Only    bool     `json:"gen2_only"` // the version has no Gen1 zip at all: SHA256/URL/Size above are the Gen2 (aarch64) one
 }
 
 // ForArch returns the plugin with the zip that fits a device whose `uname -m` is arch: the armv7 zip on Gen1 and Force, the aarch64
 // zip on Gen2 (an error when the version has none, so a Gen2 device never gets a library it cannot load).
 func (c CatPlugin) ForArch(arch string) (CatPlugin, error) {
 	if arch != "aarch64" {
+		if c.Gen2Only {
+			return c, fmt.Errorf("%s %s is Gen2 only (aarch64) and has no build for this device", c.Name, c.Version)
+		}
 		return c, nil
 	}
-	if c.Kind == "addin" || c.Aarch64 == nil {
+	if c.Aarch64 == nil {
 		return c, fmt.Errorf("%s %s has no Gen2 (aarch64) build yet", c.Name, c.Version)
 	}
 	c.Size, c.SHA256, c.URL = c.Aarch64.Size, c.Aarch64.SHA256, c.Aarch64.URL
@@ -85,6 +89,7 @@ type rawCatalog struct {
 			OSWhy       []string         `json:"os_compat_why"`
 			MaxGlibc    string           `json:"max_glibc"`
 			Assets      map[string]Asset `json:"assets"`
+			Gen2Only    bool             `json:"gen2_only"`
 			ParamCompat int              `json:"param_compat"`
 			Manifest    struct {
 				Skin     string   `json:"skin"`
@@ -125,7 +130,7 @@ func parseCatalog(data []byte) ([]CatPlugin, error) {
 			}
 			out = append(out, CatPlugin{ID: p.ID, Name: p.Name, Author: p.Author, Kind: p.Kind, Role: p.Role, Summary: p.Summary, Version: v.Version,
 				Size: v.Size, SHA256: v.SHA256, URL: v.URL, Skin: v.Manifest.Skin, ParamCompat: v.ParamCompat, UID: v.Manifest.UID, UserData: v.Manifest.UserData, Defer: v.Defer,
-				OSCompat: v.OSCompat, OSWhy: v.OSWhy, MaxGlibc: v.MaxGlibc, Tested2x: tested2x, Gen2: a64 != nil, Aarch64: a64})
+				OSCompat: v.OSCompat, OSWhy: v.OSWhy, MaxGlibc: v.MaxGlibc, Tested2x: tested2x, Gen2: a64 != nil, Aarch64: a64, Gen2Only: v.Gen2Only && a64 != nil})
 			break
 		}
 	}

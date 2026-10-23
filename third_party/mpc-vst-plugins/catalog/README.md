@@ -18,6 +18,8 @@ Design: `docs/CATALOG.md`. Formats: `docs/CATALOG_SPEC.md`.
    the source is public, add `"source_available": true`: the plugin is listed with a "Restricted use" badge and
    its own license text shown. `screenshot` is an `https://` link to an image (a raw GitHub link to a PNG/JPG in your
    repo, pinned to a tag or commit); the card shows it in a 2:1 frame, cropping other shapes. Anything but `https://` is ignored.
+   A plugin that exists for Gen2 (aarch64) only, because its engine can't run on 32-bit ARM, sets `"asset_pattern": "*-mpc-aarch64.zip"` and
+   ships just that zip (docs/GEN2.md); it is listed as "Gen2 only".
 3. CI checks the entry and your latest release. Once merged, new releases appear automatically (nightly, or
    run the "Catalog build" workflow).
 

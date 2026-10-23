@@ -14,7 +14,7 @@ six flaws in `wrapper/vst2_wrap.c` and the port workflow. Two were fixed in code
 | 2 | Reports only go out from `processReplacing()` | Documented (PORTING.md, #489). No code change |
 | 3 | `housekeeping()` polls DSP text on the audio thread | Documented (#489). Skipping unshown params is still open (ROADMAP idea) |
 | 4 | One lock over set/get/midi/render | Documented (#489): no I/O in set/get; worker + trylock |
-| 5 | No `effGetParameterProperties` (opcode 56) | Documented (#489). **Open:** whether MPC honours the switch / whole-step flags (could let Q-Links step options natively). Needs a probe plugin on a device |
+| 5 | No `effGetParameterProperties` (opcode 56) | Documented (#489). Probed on the Force 2026-10-23: MPC never asks for opcode 56 and ignores the flags, so there is nothing to implement |
 | 6 | Skin binds params by index; an insert mid-list breaks them | Fixed: `gen_vst.py` writes `<port>/params.lock`, build fails if an existing key changes index (#488) |
 
 Why not the author's one-line fix (delete the flag): it was added on 2026-09-24 so `get=`-bound readouts (jv880 bank/patch names)
@@ -38,7 +38,11 @@ at most 2 per 4096 frames; `params.lock` fails on an inserted param).
     `dynamic_display`). Done (mpc-vst-machinedrum #16).
   - Profit-8, Morpho-PE, Sturm: no (`_display` is formatted from the param's own value; they use `HAS_DISPLAY_REV`, which bumps on patch changes).
   - Daemon / Daemon Listen: no (all `poll: false` readouts are driven by `d->rev`, buttons bump it).
-  - JV-880, Luckydip, Boris, Clementine, Model-72, dx7, OTT, Maze: no dynamic labels found.
+  - TR-MPC: **yes, found on the device 2026-10-23** (missed in the first review, which only looked at labels): `sNN_fam` is derived from the voice
+    `sNN_src` and drives the skin's `when=` panels, so slots stopped reskinning when the voice changed. Fixed with `refresh_display` on the 16 `sNN_src`
+    (mpc-vst-TR-MPC #5, released as trmpc-vst-v1.0.2, device-verified). Lesson: grep every layout for `when=` and check what writes the param it reads.
+  - JV-880 (`env_view_N`, set by the user's own tap), Daemon (`kb`, `runok`, `mic`; `d->rev`): `when=` panels work on the device.
+  - Luckydip, Boris, Clementine, Model-72, dx7, OTT, Maze: no dynamic labels or `when=` found.
 - **Not affected** (own hand-written wrapper, no `mpc_engine`): Acid, Euclidier, Monomodule, Cratedigger (no vst.json), force-link-audio,
   the four gmorb dragonfly ports (checked by file listing only, 2026-10-21: worth a look).
 - **Vendored copies of `vst2_wrap.c`** (need the copy updated, not just a rebuild): Luckydip (done, PR below), Lewinator56/mpc-vst-helm,
@@ -106,6 +110,6 @@ The scripts used this session lived in the session scratchpad (`rel.sh`, `port.s
 4. Test one more port on the Force (an effect, since the report says effects show the problem too): track edit → automation with a Q-Link.
 5. Post the notice and issues to the other authors after the user approves the text; decide per-repo issues vs one per author.
 6. Reply to the reporting author.
-7. Probe opcode 56 (`effGetParameterProperties`) on a device in `poc/`; only then consider wrapper changes for flaw 5.
-8. Ideas, not started: skip polling for params the skin does not show; spread the polls across blocks; a catalog "rebuild recommended" flag.
+7. Done 2026-10-23: probe run on the Force, MPC never asks for opcode 56 and ignores the flags (NOTES.md); no wrapper change. (Was: probe opcode 56 (`effGetParameterProperties`) on a device in `poc/`; only then consider wrapper changes for flaw 5.)
+8. Done 2026-10-23 (offline, PR pending): skip polling for params the layout does not show, and spread the polls across blocks (NOTES.md). Idea, not started: a catalog "rebuild recommended" flag.
 9. Machinemodule: publish or delete the old v0.4.0 draft; the Gen2 build is untried on a Gen2 device.

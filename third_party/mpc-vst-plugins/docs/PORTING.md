@@ -84,8 +84,11 @@ for the pattern). This applies to every future port, not just ones that hit the 
       sent from `processReplacing()`. When MPC stops calling it, nothing goes out, so don't treat render as a heartbeat. A
       status light that must move while idle needs its own timer (MM-303 runs a 50 ms ticker per instance).
 - [ ] Polled readouts cost one `get_param()` each on the audio thread (every 10 ms for `<key>_on`, every 100 ms for text).
-      With hundreds of params, set `"poll": false` on readouts that only change on a tap, and keep anything costly out of a
-      polled key (docs/BENCH.md).
+      The wrapper spreads them over the blocks (each block reads its share of the list, never all of it), and `gen_vst.py` leaves
+      out a text param the layout never mentions (its key, `get=`, a `when=`, a list or a `qlinks` line); `"poll": true` keeps one the
+      skin does not show but you want refreshed. A layout with a pattern in a widget value (`%`, `*`, `{`), no layout, `custom_skin` and
+      `skin_post` polls everything. Still set `"poll": false` on readouts that only change on a tap, and keep anything costly out of
+      a polled key (docs/BENCH.md).
 - [ ] State saved via chunks (`effGetChunk`/`effSetChunk`).
 - [ ] Offline x86 test: `tools/test_port.sh <port>/vst.json` prints PASSED (instances, parameter round-trip,
       options, popups, MIDI → audio, chunk restore, under ASan).
@@ -93,8 +96,9 @@ for the pattern). This applies to every future port, not just ones that hit the 
       ["armv7", "aarch64"]` in vst.json, `tools/build_port.sh <port>/vst.json aarch64` builds `build/aarch64/<so>` (`arm64v8/gcc:12-bookworm`),
       `tools/test_port.sh <port>/vst.json aarch64` must print PASSED (UBSan, arm64 container), and the release carries both zips
       (docs/RELEASING.md, docs/GEN2.md). Still say "offline only" (or name the device once it's run there) until it has loaded on a Gen2
-      device of your own, and remember there is no SSH/root route on Gen2 this project provides — only testers who already have root
-      some other way can try it.
+      device of your own. A documented root route exists for Gen2 on MPC OS 3.9.1 (the autorun USB stick, docs/USB_STICK.md — on demand,
+      not persistent across a reboot); MPC OS 3.10.0 removes it (docs/GEN2.md, docs/NOTES.md 2026-10-23), so a device already updated to
+      3.10+ has none from this project.
 
 ## 2. Parameters
 - [ ] Stable order (the VST index is what skins and projects bind to). Append only; never reorder a shipped plugin.
@@ -134,7 +138,8 @@ for the pattern). This applies to every future port, not just ones that hit the 
       reproduced on our device. `catalog_check.py` warns about such images.)
 - [ ] Q-Links: 1–8 = knob bank 1, 9–16 = bank 2; nested pages via several `qlinks` lines.
 - [ ] Labels or unpolled text that follow another param (`dynamic_name` / `dynamic_display` reading a selector, a
-      `"poll": false` readout bound with `get=`): put `"refresh_display": true` on that selector. A plain host write
+      `"poll": false` readout bound with `get=`), or a skin `when=` panel that follows a param the engine derives from another
+      (TR-MPC's `sNN_fam`, set by the voice `sNN_src`): put `"refresh_display": true` on the param that is written. A plain host write
       no longer asks MPC for an UpdateDisplay (NOTES.md 2026-10-21). Test Q-Links on track edit → automation, not only
       on the plugin screen: that screen takes a different host path.
 - [ ] Option lists and `"display": "int"` params step one option or whole number per Q-Link event and per data wheel

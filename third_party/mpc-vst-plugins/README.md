@@ -67,7 +67,10 @@ authors, listed in the catalog, and installed by people on their own units.
   A plugin that needs more than 2.32 (up to 2.36) is listed as 3.x only; the catalog refuses more than 2.36.
 - **Tested on a Force** (MPC OS 3.9.1) as the reference device. Other Gen1 MPC OS devices (Live and Live II, One, X,
   Key 61) run the same `MPC` program. A user's MPC One on MPC OS 2.15 is what led to the glibc 2.31 builds; reports
-  from other models are welcome. Gen2 devices (e.g. Live III) are reported to be more locked down.
+  from other models are welcome. **Gen2 devices (aarch64: Live III, One G2, Key(s) G2) are supported** with a
+  separate build per plugin/addin; confirmed on a Live III (2026-10-23) for both. Gen2's root filesystem is
+  verity-based and more locked down than Gen1's: no SSH without a modded unit, and no writable `/etc` at all even
+  with root (docs/GEN2.md).
 
 What the plugins can do:
 - **Instruments and effects** that play from pads, keys and MIDI clips, with Q-Links, automation, and settings saved

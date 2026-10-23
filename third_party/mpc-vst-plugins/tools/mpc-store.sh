@@ -149,14 +149,15 @@ os_warnings() {
 
 do_list() {
     printf '%-18s %-9s %-10s %s\n' "ID" "LATEST" "INSTALLED" "NAME"
-    awk -F'\t' '$1 == "plugin" && $4 == 1 { print $2 "\t" $3 "\t" $6 "\t" $7 "\t" $5 "\t" $15 "\t" $19 }' "$W/catalog.tsv" | while IFS=$TAB read -r id ver name skin kind os url64; do
+    awk -F'\t' '$1 == "plugin" && $4 == 1 { print $2 "\t" $3 "\t" $6 "\t" $7 "\t" $5 "\t" $15 "\t" $19 "\t" $12 }' "$W/catalog.tsv" | while IFS=$TAB read -r id ver name skin kind os url64 url1; do
         inst=$(installed_version "$id" || true)
         where="$SYNTHS/$skin"; [ "$kind" != addin ] || where="$ADDINS/$id"
         if [ -z "$inst" ]; then if [ -d "$where" ]; then inst="manual"; else inst="-"; fi; fi
         [ "$kind" != addin ] || name="$name (addin)"
         mark=""; if [ "$inst" != "-" ] && [ "$inst" != "manual" ] && [ "$inst" != "$ver" ]; then mark="  (update available)"; fi
         if [ "$os" = "3.x" ]; then mark="$mark  [MPC OS 3.x only]"; fi
-        if [ "$ARCH" = aarch64 ] && [ "$kind" != addin ] && { [ -z "$url64" ] || [ "$url64" = "-" ]; }; then mark="$mark  [no Gen2 build]"; fi
+        if [ "$ARCH" = aarch64 ] && { [ -z "$url64" ] || [ "$url64" = "-" ]; }; then mark="$mark  [no Gen2 build]"; fi
+        if [ "$ARCH" != aarch64 ] && [ "$url1" = "-" ]; then mark="$mark  [Gen2 only]"; fi
         printf '%-18s %-9s %-10s %s%s\n' "$id" "$ver" "$inst" "$name" "$mark"
     done
 }
@@ -166,6 +167,7 @@ do_install_rows() {
     n=0; : > "$W/todo"
     for r in "$@"; do
         id=$(col "$r" 2); ver=$(col "$r" 3); size=$(col "$r" 10); sha=$(col "$r" 11); url=$(col "$r" 12)
+        if [ "$ARCH" != aarch64 ] && [ "$url" = "-" ]; then die "$id $ver is Gen2 only (aarch64): it has no build for this device, nothing was installed"; fi
         if [ "$ARCH" = aarch64 ]; then   # a Gen2 device takes the aarch64 zip; the armv7 one would not load
             url=$(col "$r" 19); [ -n "$url" ] && [ "$url" != "-" ] || die "$id $ver has no Gen2 (aarch64) build: nothing was installed"
             size=$(col "$r" 17); sha=$(col "$r" 18)
