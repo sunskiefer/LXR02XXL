@@ -74,9 +74,9 @@ static void midi_cc(Lxr *x, uint8_t cc, uint8_t v)
     if (cc == 99) { x->nrpn = (v << 7) | (nrpn >= 0 ? nrpn & 127 : 0); return; }
     if (cc == 98) { x->nrpn = (nrpn >= 0 ? nrpn & ~127 : 0) | v; return; }
     if (cc == 6 && nrpn >= 0) {
+        /* NRPN n is parameter 128 + n: up to the sound parameters' end, then pulse widths, the FX unit (100..117) */
         if (nrpn <= LXR_NUM_SOUND_PARAMS - 128 - 1) lxr_setKitParam(x, (uint16_t)(128 + nrpn), v, 1);
-        else if (nrpn >= 100 && nrpn <= 105) lxr_setExt(x, (uint8_t)(EXT_PWM1 + nrpn - 100), v);   /* PWM of voices 1-6 */
-        else if (nrpn >= 106 && nrpn <= 116) lxr_setExt(x, (uint8_t)(EXT_FX_TYPE + nrpn - 106), v);   /* its FX */
+        else if (nrpn < LXR_KIT_BYTES - 128 - 1) lxr_setExt(x, (uint8_t)(128 + nrpn - LXR_NUM_SOUND_PARAMS), v);
         x->displayRev++;
         return;
     }

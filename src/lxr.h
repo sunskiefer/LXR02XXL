@@ -7,7 +7,6 @@
 #pragma once
 #include <stdint.h>
 #include "lxr/lxr_dsp.h"
-#include "lxr/lxr_fx.h"
 
 #define NUM_TRACKS   7
 #define NUM_STEPS    64
@@ -81,6 +80,7 @@ typedef struct {
 extern const Kit lxr_factoryKits[NUM_KITS];
 extern const LxrFactoryPattern lxr_factoryPatterns[];
 extern const int lxr_numFactoryPatterns;
+extern const uint8_t lxr_factoryKits05[16][253];   /* factory_05.c: the 0.5.x factory kits, old layout */
 
 /* ---------------------------------------------------------------- the front panel */
 enum {   /* buttons, in the order of their plugin parameters */
@@ -191,7 +191,7 @@ typedef struct Lxr {
     float fader[NUM_FADERS];
     uint32_t displayRev;
     uint32_t clock;            /* frames rendered since the instance started (blinks, messages) */
-    float outL[32], outR[32];  /* the engine block being played out */
+    float outL[LXR_BLOCK], outR[LXR_BLOCK];  /* the engine block being played out */
     int outPos;
     uint8_t ledShown[NUM_BUTTONS];
     uint32_t pressFlip[NUM_BUTTONS];   /* host button resync (see engine.c) */
@@ -209,7 +209,6 @@ typedef struct Lxr {
         uint8_t amt, seqAmt;   /* the knobs: 0..10 = 0..100 % */
         uint32_t flash, seqFlash, resetFlash;   /* the keys light until (frames) */
     } rnd;
-    LxrFx fx;
     uint8_t pendingTrig[NUM_TRACKS];   /* velocity+1 queued by a trigger from the UI thread */
     uint8_t pendingNote[NUM_TRACKS];
     char dataDir[512];
@@ -221,7 +220,7 @@ void lxr_init(Lxr *x, const char *dataDir);
 void lxr_applyKit(Lxr *x);                         /* the working kit (and morph) into the engine */
 void lxr_setKitParam(Lxr *x, uint16_t par, uint8_t value, int record);   /* edit + engine (+ automation recording) */
 void lxr_setExt(Lxr *x, uint8_t ext, uint8_t value);
-void lxr_render(Lxr *x, float *L, float *R, int n);     /* any n; the engine runs in 32-frame blocks */
+void lxr_render(Lxr *x, float *L, float *R, int n);     /* any n; the engine runs in 64-frame blocks */
 void lxr_trigger(Lxr *x, uint8_t track, uint8_t vel, uint8_t note, int fromUser);
 void lxr_initKit(Kit *k);
 void lxr_initPattern(Pattern *p);
@@ -232,7 +231,7 @@ extern const uint8_t lxr_padNotes[NUM_TRACKS];     /* the voices' default notes:
 
 void seq_start(Lxr *x, int song);
 void seq_stop(Lxr *x);
-void seq_block(Lxr *x, int frames);                 /* advance the clock by a 32-frame block, firing what falls in it */
+void seq_block(Lxr *x, int frames);                 /* advance the clock by an engine block, firing what falls in it */
 void seq_hostTime(Lxr *x, int playing, double ppq, double tempo);
 void seq_loadPattern(Lxr *x, uint8_t pat);         /* now: working pattern = stored pattern */
 void seq_queuePattern(Lxr *x, uint8_t pat);
@@ -269,6 +268,7 @@ void lxr_randomizeVoices(Lxr *x, int pct, int voice);   /* the green key (voice 
 void seq_randomize(Lxr *x, int pct, int track);          /* the yellow key (track -1: all seven) */
 
 /* store.c */
+void lxr_kitFromOld(Kit *k, const unsigned char *old);   /* a kit saved by LXRXXL 0.5.x (8 + 245 bytes) */
 int store_saveProject(Lxr *x, uint8_t slot);
 int store_loadProject(Lxr *x, uint8_t slot);
 int store_projectName(Lxr *x, uint8_t slot, char *name);   /* 1 if it exists */

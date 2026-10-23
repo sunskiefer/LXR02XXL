@@ -39,10 +39,10 @@ const char *ui_trackName(int t) { return t >= 0 && t < NUM_TRACKS ? trackNames[t
 static const char *const sectionNames[8] = {"OSC", "AEG", "MOD", "FM", "CLICK", "FILTER", "LFO", "MIX"};
 static const char *const lsNames[5] = {"Kit", "MorphKit", "Song", "Project", "Pattern"};
 static const char *const clearNames[5] = {"kit", "track", "pattern", "autom. 1", "autom. 2"};
-static const char *const fxTypes[5] = {"off", "drv", "rng", "cmp", "del"};
+static const char *const fxTypes[6] = {"off", "drv", "rng", "cmp", "del", "rev"};
 static const char *const outNames[6] = {"St1", "St2", "L1", "R1", "L2", "R2"};
 static const char *const drvTypes[3] = {"tub", "fld", "clp"};
-static const char *const ringWaves[5] = {"Sin", "Tri", "Saw", "Rec", "Noi"};
+static const char *const ringWaves[6] = {"Sin", "Tri", "Saw", "Rec", "Noi", "PWM"};
 static const char *const ratioNames[6] = {"1:1", "2:1", "3:1", "4:1", "6:1", "8:1"};
 static const char *const delayTypes[2] = {"Del", "Pp"};
 static const char *const rollNames[14] = {"One", "1/1", "1/2", "1/3", "1/4", "1/6", "1/8", "12", "16", "24", "32", "48", "64", "128"};
@@ -200,6 +200,9 @@ void ui_refreshSlots(Lxr *x)
         } else if (type == 4) {
             s[3] = SLOT(SK_FX, EXT_FX_DELAYTYPE);
             s[4] = SLOT(SK_FX, EXT_FX_P1); s[5] = SLOT(SK_FX, EXT_FX_P2); s[6] = SLOT(SK_FX, EXT_FX_P3); s[7] = SLOT(SK_FX, EXT_FX_P4);
+        } else if (type == 5) {
+            s[3] = SLOT(SK_FX, EXT_FX_REVERBTYPE);
+            s[4] = SLOT(SK_FX, EXT_FX_P1); s[5] = SLOT(SK_FX, EXT_FX_P2); s[6] = SLOT(SK_FX, EXT_FX_P3); s[7] = SLOT(SK_FX, EXT_FX_P4);
         }
         break;
     }
@@ -249,13 +252,14 @@ static int slot_max(Lxr *x, const Slot *s)
     case SK_EXT: return 127;
     case SK_FX:
         switch (s->id) {
-        case EXT_FX_TYPE: return 4;
+        case EXT_FX_TYPE: return 5;
         case EXT_FX_OUT: return 5;
+        case EXT_FX_DW: return 100;
         case EXT_FX_DRVTYPE: return 2;
-        case EXT_FX_RINGWAVE: return 4;
+        case EXT_FX_RINGWAVE: return 5;
         case EXT_FX_RATIO: return 5;
         case EXT_FX_DELAYTYPE: return 1;
-        case EXT_FX_P2: return x->kit.b[LXR_NUM_SOUND_PARAMS + EXT_FX_TYPE] == 4 ? 1 : 127;   /* delay range low/high */
+        case EXT_FX_REVERBTYPE: return 0;
         default: return 127;
         }
     case SK_LFOVOICE: return 5;
@@ -502,13 +506,13 @@ static const char *slot_short(Lxr *x, const Slot *s, char *buf)
         case EXT_FX_TYPE: return "typ";
         case EXT_FX_OUT: return "out";
         case EXT_FX_DW: return "d/w";
-        case EXT_FX_DRVTYPE: case EXT_FX_DELAYTYPE: return "typ";
+        case EXT_FX_DRVTYPE: case EXT_FX_DELAYTYPE: case EXT_FX_REVERBTYPE: return "typ";
         case EXT_FX_RINGWAVE: return "wav";
         case EXT_FX_RATIO: return "rat";
-        case EXT_FX_P1: return type == 1 ? "drv" : type == 2 ? "frq" : type == 3 ? "atk" : "tim";
-        case EXT_FX_P2: return type == 1 ? "ton" : type == 3 ? "dec" : "rng";
-        case EXT_FX_P3: return type == 1 ? "col" : type == 3 ? "tre" : "ton";
-        case EXT_FX_P4: return type == 1 ? "vol" : type == 3 ? "gai" : "fbk";
+        case EXT_FX_P1: return type == 1 ? "drv" : type == 2 ? "frq" : type == 3 ? "atk" : type == 5 ? "pre" : "tim";
+        case EXT_FX_P2: return type == 1 ? "col" : type == 3 || type == 5 ? "dec" : "rng";
+        case EXT_FX_P3: return type == 1 ? "ton" : type == 3 ? "tre" : "ton";
+        case EXT_FX_P4: return type == 1 ? "vol" : type == 3 ? "gai" : type == 5 ? "ref" : "fbk";
         }
         return "";
     }
@@ -551,12 +555,13 @@ static const char *slot_long(Lxr *x, const Slot *s)
         case EXT_FX_DW: return "Dry/Wet";
         case EXT_FX_DRVTYPE: return "Drive Type";
         case EXT_FX_DELAYTYPE: return "Delay Type";
+        case EXT_FX_REVERBTYPE: return "Reverb Type";
         case EXT_FX_RINGWAVE: return "Waveform";
         case EXT_FX_RATIO: return "Ratio";
-        case EXT_FX_P1: return type == 1 ? "Overdriv" : type == 2 ? "Frequncy" : type == 3 ? "Attack" : "Time";
-        case EXT_FX_P2: return type == 1 ? "Tone" : type == 3 ? "Decay" : "Range";
-        case EXT_FX_P3: return type == 1 ? "Color" : type == 3 ? "Threshld" : "Tone";
-        case EXT_FX_P4: return type == 1 ? "Volume" : type == 3 ? "Gain" : "Feedback";
+        case EXT_FX_P1: return type == 1 ? "Overdriv" : type == 2 ? "Frequncy" : type == 3 ? "Attack" : type == 5 ? "PreDelay" : "Time";
+        case EXT_FX_P2: return type == 1 ? "Color" : type == 3 || type == 5 ? "Decay" : "Range";
+        case EXT_FX_P3: return type == 1 ? "Tone" : type == 3 ? "Threshld" : "Tone";
+        case EXT_FX_P4: return type == 1 ? "Volume" : type == 3 ? "Gain" : type == 5 ? "Reflxion" : "Feedback";
         }
         return "";
     }
@@ -593,15 +598,13 @@ static void slot_text(Lxr *x, const Slot *s, char *buf)
     case SK_EXT: sprintf(buf, "%d", v); return;
     case SK_FX:
         switch (s->id) {
-        case EXT_FX_TYPE: strcpy(buf, fxTypes[v < 5 ? v : 0]); return;
+        case EXT_FX_TYPE: strcpy(buf, fxTypes[v < 6 ? v : 0]); return;
         case EXT_FX_OUT: strcpy(buf, outNames[v < 6 ? v : 0]); return;
         case EXT_FX_DRVTYPE: strcpy(buf, drvTypes[v < 3 ? v : 0]); return;
-        case EXT_FX_RINGWAVE: strcpy(buf, ringWaves[v < 5 ? v : 0]); return;
+        case EXT_FX_RINGWAVE: strcpy(buf, ringWaves[v < 6 ? v : 0]); return;
+        case EXT_FX_REVERBTYPE: strcpy(buf, "Plt"); return;
         case EXT_FX_RATIO: strcpy(buf, ratioNames[v < 6 ? v : 0]); return;
         case EXT_FX_DELAYTYPE: strcpy(buf, delayTypes[v < 2 ? v : 0]); return;
-        case EXT_FX_P2:
-            if (x->kit.b[LXR_NUM_SOUND_PARAMS + EXT_FX_TYPE] == 4) { strcpy(buf, v ? "hi" : "lo"); return; }
-            break;
         }
         sprintf(buf, "%d", v);
         return;

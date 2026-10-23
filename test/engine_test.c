@@ -10,6 +10,7 @@
 #include "lxr_state.h"
 #include "param_ids.h"
 #include "ParameterArray.h"
+#include "menu.h"
 
 typedef struct { Lxr x; LxrState *st; } Inst;   /* engine.c's instance: the Lxr first */
 
@@ -376,6 +377,70 @@ static void factory(void)
     E->destroy(in);
 }
 
+/* the LXR-02 firmware engine (0.6): native kits with their own mod targets, every FX type, both preset sets, and
+ * MPC projects saved by LXRXXL 0.5.x */
+static void lxr02(void)
+{
+    Inst *in = E->create(NULL);
+    Lxr *x = &in->x;
+    int k, t, ext = 0, sound = 1;
+    char name[9];
+    for (k = 0; k < 16; k++)
+        for (t = 0; t < 6; t++) {
+            const uint16_t a = modTargets[x->p.kits[k].b[PAR_TARGET_LFO1 + t]].param, b = modTargets[x->p.kits[k].b[PAR_VEL_DEST_1 + t]].param;
+            if (a >= LXR_NUM_SOUND_PARAMS || b >= LXR_NUM_SOUND_PARAMS) ext++;
+        }
+    CHECK(ext > 0, "the DLC kits keep their pulse width / FX modulation targets (%d)", ext);
+    memcpy(name, x->p.kits[16].name, 8); name[8] = 0;
+    CHECK(!strcmp(name, "Lambo05 ") && !memcmp(x->p.kits[31].name, "Mist05  ", 8) && !memcmp(x->p.kits[32].name, "Init 05 ", 8)
+          && !memcmp(x->p.kits[33].name, "Initkit ", 8), "both preset sets: '%s' .. '%.8s', '%.8s', '%.8s'", name,
+          x->p.kits[31].name, x->p.kits[32].name, x->p.kits[33].name);
+    CHECK(!memcmp(x->p.kits[16].b + 1, x->p.kits[0].b + 1, PAR_VEL_DEST_1 - 1), "the 0.5 kits are the same sounds (Lambo05 = Lambo up to the targets)");
+    /* every FX type on the FX bus, a hit, then the tail */
+    stopAll(in);
+    lxr_state_enter(in->st);
+    for (t = 0; t < 6; t++) lxr_setKitParam(x, (uint16_t)(PAR_AUDIO_OUT1 + t), 6, 0);
+    lxr_setExt(x, EXT_FX_DW, 100);
+    lxr_state_leave();
+    for (k = 0; k <= 5; k++) {
+        double hit, tail;
+        lxr_state_enter(in->st);
+        lxr_setExt(x, EXT_FX_TYPE, (uint8_t)k);
+        lxr_setExt(x, EXT_FX_DELAYTYPE, (uint8_t)(k == 4));
+        lxr_setExt(x, EXT_FX_P1, 80); lxr_setExt(x, EXT_FX_P2, 90); lxr_setExt(x, EXT_FX_P3, 100); lxr_setExt(x, EXT_FX_P4, 100);
+        lxr_trigger(x, 0, 120, 63, 0); lxr_trigger(x, 3, 120, 63, 0);
+        lxr_state_leave();
+        hit = render(in, 4410, NULL);
+        render(in, 44100, NULL);
+        tail = render(in, 4410, NULL);
+        if (!(hit > 0.001 || tail > 0.001) || isnan(hit) || isnan(tail)) sound = 0;
+        if (k == 1) CHECK(tail < 0.001, "drive: no DC left on the output once the hit has gone (%.5f)", tail);
+        if (k == 5) CHECK(tail > 0.00005 || hit > 0.001, "reverb: hit %.4f, a second later %.5f", hit, tail);
+    }
+    CHECK(sound, "drive, ring, compressor, ping-pong delay and reverb all sound on the FX bus");
+    E->destroy(in);
+
+    /* an MPC project saved with LXRXXL 0.5.10 */
+    {
+        FILE *f = fopen("../../test/data/state_0510.txt", "r");
+        char *txt = calloc(1, 1 << 20);
+        Inst *o = E->create(NULL);
+        Lxr *y = &o->x;
+        if (f && txt) { size_t r = fread(txt, 1, (1 << 20) - 1, f); txt[r] = 0; }
+        if (f) fclose(f);
+        E->set_param(o, "state", txt ? txt : "");
+        CHECK(!memcmp(y->kit.name, "OldKit  ", 8) && y->kit.b[PAR_COARSE1] == 77 && !memcmp(y->p.kits[5].name, "OldKit  ", 8),
+              "a 0.5.10 MPC project loads ('%.8s')", y->kit.name);
+        CHECK(modTargets[y->kit.b[PAR_TARGET_LFO1]].param == PAR_VELOD1 && modTargets[y->kit.b[PAR_VEL_DEST_1]].param == PAR_FILTER_FREQ_1,
+              "its LFO and velocity targets point at the same parameters (%d, %d)", modTargets[y->kit.b[PAR_TARGET_LFO1]].param,
+              modTargets[y->kit.b[PAR_VEL_DEST_1]].param);
+        CHECK(y->kit.b[PAR_FX_TYPE] == 4 && y->kit.b[PAR_FX_DELAY_TYPE] == 1 && y->kit.b[PAR_FX_REVERB_TYPE] == 0 && y->kit.b[PAR_FX_P2] == 127,
+              "its FX unit: ping-pong delay, range high");
+        free(txt);
+        E->destroy(o);
+    }
+}
+
 int main(void)
 {
     E = mpc_engine();
@@ -386,6 +451,7 @@ int main(void)
     isolation();
     randomizers();
     factory();
+    lxr02();
     fuzz();
     printf(fails ? "FAILED (%d)\n" : "PASSED\n", fails);
     return fails ? 1 : 0;

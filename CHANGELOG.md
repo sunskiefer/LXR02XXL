@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.6.0
+The sound engine is the LXR-02's own: Erica Synths open-sourced the LXR firmware (GPL-3.0,
+github.com/erica-synths/lxr-desktop-app) and LXRXXL now runs its sound engine in place of the LXR02Open port of the
+0.37 engine. Untouched: the panel and its artwork, the page sizes, the PARAMETERS column, the randomizers, RESET, the
+sequencer, the Force pads and MPC's pads/step sequencer playing the voices, the faders' curve, CC1 morphing.
+- **Voices**: the firmware's oscillators (PWM, its own waveform list), filters, envelopes, transient generator, LFOs,
+  velocity and LFO modulation, FM, decimation and mixer, in its 64-sample blocks. The voice faders feed the voices as on
+  the machine.
+- **FX unit**: the firmware's drive (tube, fold, clip), ring modulator, compressor, delay and ping-pong delay replace
+  LXRXXL's own versions written from the manual. Drive's 2nd/3rd values are colour and tone (were labelled the other
+  way round), the ring modulator also has PWM, the delay range is a full 0-127 value, dry/wet is 0-100.
+- **Reverb**: the firmware's plate reverb (pre-delay, decay, tone, reflection), present in its code but off on the
+  hardware, is on here as FX type "rev".
+- **Kits are LXR-02 kits**: all 247 bytes, as the machine saves them. Modulation targets use the LXR-02's own list, so
+  LFOs and velocity can modulate pulse width and the FX unit (the Hrtl kits' 6 such targets were off before).
+  NRPN 100-117 reach every one of those parameters (reverb type and delay type included).
+- **Presets, old and new**: the factory project (RESET) has the 16 Hrtl LXR-02 DLC kits as the LXR-02 plays them
+  (kits 1-16) and as 0.5 shipped them (kits 17-32, "Lambo05" ...), LXRXXL 0.5's init kit ("Init 05", kit 33) and the
+  LXR-02 firmware's init kit ("Initkit", kit 34), with the 16 demo patterns. "Clear kit" now goes to the firmware's init
+  kit.
+- **Your 0.5.x work opens**: MPC projects and saved LXRXXL projects from 0.5.x are converted on load (kits moved to the
+  LXR-02 layout, mod targets kept on the same parameters).
+- Built on the latest mpc-vst-plugins wrapper (with the Q-Link and automation fix, #486-#489; the readout polling is
+  spread over blocks). The MPC project keeps the faders' exact positions.
+- Fixed in the firmware code for the plugin (PATCHES.md): a ping-pong delay pointer overrun after switching delay
+  type, a NULL parameter read, the noise oscillator's wrap test; out-of-range values (MIDI, automation) are kept in
+  range as the menu does; a DC blocker on the output.
+- Licence: GPL-3.0 (the firmware's), source with every release. LXR02Open's code is no longer in LXRXXL.
+
 ## 0.5.10
 - Built on the latest wrapper and includes the Q-Link and automation fix (mpc-vst-plugins #486-#489): Q-Links now
   move this plugin's parameters on the track's automation screen (MPC no longer rebuilds its parameter screen on every

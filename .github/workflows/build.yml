@@ -53,11 +53,11 @@ jobs:
             --skin "build/package/L'Cronx - VST - LXRXXL" \
             --entry build/pluginlist-entry.xml \
             --version "$VERSION" \
-            --about "LXRXXL by L'Cronx: the open-source Sonic Potions LXR engine for MPC OS, inspired by the Erica Synths LXR-02" \
-            --id lxrxxl --repo sunskiefer/LXR02XXL --license LicenseRef-LXR02-Open \
+            --about "LXRXXL by L'Cronx: the LXR-02's open-source sound engine (Erica Synths LXR firmware, GPL-3.0) for MPC OS, inspired by the Erica Synths LXR-02" \
+            --id lxrxxl --repo sunskiefer/LXR02XXL --license GPL-3.0-only \
             $( [ -f bench.json ] && echo --bench bench.json ) \
             -o dist
-          # the LXR02 Open-Source license: a binary goes with its complete source, released beside it
+          # GPL-3.0: a binary goes with its complete source, released beside it
           git archive --format=zip --prefix="LXRXXL-$VERSION-source/" -o "dist/LXRXXL-$VERSION-source.zip" HEAD
 
       - name: Catalog check

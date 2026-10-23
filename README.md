@@ -1,32 +1,30 @@
-# LXRXXL v0.5.8
+# LXRXXL v0.6.0
 
 ![LXRXXL on MPC](docs/img/page.png)
 
 **Tested on an Akai Force** (see `tested.json`). Downloads: [Releases](https://github.com/sunskiefer/LXR02XXL/releases).
 
-A port of the open-source Sonic Potions **LXR** engine to the Akai Force and MPC (MPC OS 3.x, VST2 through
-[mpc-vst-plugins](https://github.com/sd88me/mpc-vst-plugins)), with LXR-02-style features written from the manual.
-Inspired by the Erica Synths LXR-02. The whole panel on one page: display, four pots, data encoder, the 7 faders, every
-button with its LED, and the 16 step keys, playable from the touchscreen and from the Force's pads.
+The LXR-02 drum synthesizer's open-source sound engine on the Akai Force and MPC (MPC OS 3.x, VST2 through
+[mpc-vst-plugins](https://github.com/sd88me/mpc-vst-plugins)), inspired by the Erica Synths LXR-02. The whole panel on
+one page: display, four pots, data encoder, the 7 faders, every button with its LED, and the 16 step keys, playable from
+the touchscreen and from the Force's pads.
 
 ## Sound
 
-The six voices (DRUM1-3, SNARE, CLAP/CYMBAL, HIHAT) are the LXR's own DSP code, compiled unchanged from
-[LXR02Open](https://github.com/brendanclarke/LXR02Open) (Brendan Clarke's port of Sonic Potions LXR 0.37 to the
-LXR-02 hardware): oscillators, the transient generator, the filters (LP HP BP UBP Nch Pek LP2), the envelopes, LFOs,
-velocity modulation, FM, decimation, the parameter value curves and the CC handler. They run at the machine's rate in
-its 32-sample blocks, mixed the way the LXR-02's mixer mixes them (fader ramps, pan law, routing to the main out).
+Since 0.6 the sound is the LXR-02's own: the sound engine of the LXR firmware Erica Synths open-sourced in October
+2026 ([erica-synths/lxr-desktop-app](https://github.com/erica-synths/lxr-desktop-app), GPL-3.0), compiled for MPC OS
+(`third_party/lxr-desktop-app`, the few changes in [PATCHES.md](PATCHES.md)). The six voices (DRUM1-3, SNARE,
+CLAP/CYMBAL, HIHAT) with their oscillators (Sin Tri Saw Rec Noi PWM, with pulse width), the transient generator, the
+filters, envelopes, LFOs, velocity and LFO modulation (pulse width and the FX unit included), FM, decimation, the
+mixer, and the **FX unit**: drive (tube, fold, clip), ring modulator, compressor (1:1 to 8:1), delay and ping-pong
+delay, plus the firmware's **plate reverb**, which is in its code but off on the hardware. Parameters go through the
+firmware's own handler, at the machine's rate in its 64-sample blocks. Kits are the LXR-02's own 247-byte kits, so
+kits from an LXR-02 play as they do there.
 
-The LXR-02's own firmware (Erica Synths, v1.70) is closed source, so what it adds over 0.37 was written here from the
-owner's manual and the v1.7 changelog, with the firmware's names and value lists:
-- the **PWM** waveform (in the waveform list where 0.37 had the cymbal wave: Sin Tri Saw Rec Noi PWM) with its pulse
-  width;
-- the **FX unit** (off, drive tub/fld/clp, ring modulator, compressor 1:1 to 8:1, delay and ping-pong delay), fed by
-  the voices routed to "FX", out to the main out;
-- the **sequencer**: 64 patterns of 7 tracks x 64 steps (4 bars), per-track length, step velocity, note, probability
-  and two parameter locks per step, manual rolls, shuffle, songs, recording, the euclidean pattern generator, kit
-  morphing and kit change with the pattern; per-step parameters show while a step is held (two at most, the oldest
-  replaced, as in v1.7).
+Around it, LXRXXL's own: the **sequencer**: 64 patterns of 7 tracks x 64 steps (4 bars), per-track length, step
+velocity, note, probability and two parameter locks per step, manual rolls, shuffle, songs, recording, the euclidean
+pattern generator, kit morphing and kit change with the pattern; per-step parameters show while a step is held. The
+faders keep LXRXXL's log curve (from LXR02Open, the engine LXRXXL used up to 0.5).
 
 **[User manual](docs/MANUAL.md)**: every key, page and function, step by step.
 
@@ -60,10 +58,19 @@ number runs the LXR on its own clock.
 
 ## The mod: presets, RESET and randomizers
 
-**Presets.** LXRXXL comes with the Hrtl LXR-02 DLC project (`presets/`): 64 kits (Lambo, Reservoir, Faders, Malware,
-Zipper, Nanobyte, Kronky, Boooost, Dropbar, Goondam, SpaceD, Penalty, Dialup, Express, Necro, Mist and init kits) and
-16 demo patterns, each with its kit (kit change mode "auto", so selecting a pattern brings its kit). A new LXRXXL
-starts on this project, on pattern 1; an MPC project you saved opens as you saved it.
+**Presets, old and new.** The factory project, built from the Hrtl LXR-02 DLC project (`presets/`), has both preset
+sets:
+
+| Kits | What |
+|---|---|
+| 1-16 | the Hrtl kits (Lambo, Reservoir, Faders, Malware, Zipper, Nanobyte, Kronky, Boooost, Dropbar, Goondam, SpaceD, Penalty, Dialup, Express, Necro, Mist) as the LXR-02 plays them, their pulse width and FX modulation included |
+| 17-32 | the same 16 as LXRXXL 0.5 shipped them ("Lambo05" ... "Mist05": those few modulations off) |
+| 33 | "Init 05", LXRXXL 0.5's init kit (built from the manual's drum recipes) |
+| 34 | "Initkit", the LXR-02 firmware's init kit (also what "clear kit" goes to) |
+| 35-64 | the DLC's Initkits |
+
+and the 16 demo patterns, each with its kit (kit change mode "auto", so selecting a pattern brings its kit). A new
+LXRXXL starts on this project, on pattern 1; an MPC project you saved opens as you saved it (also one saved with 0.5.x).
 
 **RESET** (blue key, top left): back to the factory project, pattern 1 with its kit, the sequencer stopped. Anything
 not saved is replaced.
@@ -116,7 +123,7 @@ play the drums), "pnl" back on. A plugin can't light the Force's pads, so the LE
 Each voice listens on its own MIDI channel and note (MIX page; by default channel 1, notes 36-42); the global channel
 (CONFIG) plays the selected voice tonally. While the pads are the panel, the notes they send work the panel, not the voices. CC n sets sound
 parameter n-1 and NRPN the parameters from 128 (the LXR's CC/NRPN list), NRPN 100-105 the PWM of voices 1-6 and
-106-116 the FX unit, CC1 morphs, program change selects the pattern.
+106-117 the FX unit (reverb and delay type included), CC1 morphs, program change selects the pattern.
 
 ## Artwork
 
@@ -125,9 +132,8 @@ Artwork by Suns Kiefer.
 ## Presets from an LXR-02
 
 `tools/import_lxr02.py <LXR-02 project folder>` turns an LXR-02 project (its SD card's `NN-NAME.SND` kits and `NN-.PAT`
-patterns, firmware 1.70) into the factory content (`src/factory_data.c`); the file layouts are described at its top.
-The LXR-02's modulation targets for pulse width and the FX unit have no modulation in this engine: those few are set
-off (6 in the Hrtl project). Songs and the global settings file are not imported.
+patterns) into the factory content (`src/factory_data.c`); the file layouts are described at its top. The kits are
+taken as they are, all 247 bytes. Songs and the global settings file are not imported.
 
 ## Data
 
@@ -166,10 +172,14 @@ Changes to the vendored LXR code are listed in [PATCHES.md](PATCHES.md).
 
 ## License and credits
 
-- LXR DSP and parameter code: Julian Schmidt (Sonic Potions LXR), Brendan Clarke (LXR02Open). Under the LXR02
-  Open-Source license (`third_party/lxr02open/LICENSE`): **not for sale or commercial use**, and a binary must come
-  with its complete source. LXRXXL's own code is under the same terms, and every release includes its source.
+- Sound engine: the Erica Synths LXR firmware, Copyright (C) 2012-2026 Erica Synths (DSP by Julian Schmidt, Sonic
+  Potions), GPL-3.0-only (`third_party/lxr-desktop-app/LICENSE` and `NOTICE.md`). LXRXXL is a modified version of it and
+  is under the same licence (`LICENSE`); every release includes its complete source.
+- LXRXXL 0.1-0.5 were built on [LXR02Open](https://github.com/brendanclarke/LXR02Open) by Brendan Clarke; its fader
+  curve and CC1 morph idea live on here, its code does not.
 - VST2 wrapper, skin builder and installer: sd88me, [mpc-vst-plugins](https://github.com/sd88me/mpc-vst-plugins) (MIT).
+- Presets: the Hrtl LXR-02 DLC project.
 - Interface font: Titillium Web, SIL Open Font License 1.1.
 
-LXRXXL is not affiliated with or endorsed by Sonic Potions, Erica Synths or Akai Professional. LXR-02 is their trademark.
+LXRXXL is not official Erica Synths software and is not affiliated with or endorsed by Erica Synths, Sonic Potions or
+Akai Professional. "Erica Synths", "LXR" and "LXR-02" are trademarks of Erica Synths.

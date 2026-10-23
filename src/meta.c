@@ -1,19 +1,14 @@
-/* LXRXXL -- parameter names and value text, as the LXR shows them (tables from the LXR02Open menu). */
+/* LXRXXL -- parameter names and value text, as the LXR shows them (the LXR firmware's menu tables: MenuText.h and
+ * menu.c, Copyright (C) 2012-2026 Erica Synths, GPL-3.0-only). */
 #include <stdio.h>
 #include <string.h>
 #include "lxr.h"
-#include "menu.h"
-#include "MenuText.h"
-#include "CcNr2Text.h"
+#include "Parameters.h"
+#include "menu/menu.h"
+#include "menu/MenuText.h"
+#include "menu/CcNr2Text.h"
 
 #include "lxr/menu_tables.inc"
-
-/* the LXR-02's waveform list (firmware 1.70): PWM where the 0.37 firmware had its crash sample (Oscillator.h) */
-static const char *const waveNames[] = {"Sin", "Tri", "Saw", "Rec", "Noi", "PWM"};
-#define NUM_WAVES 6
-/* audio outs: the LXR-02 adds the FX bus */
-static const char *const outNames[] = {"St1", "St2", "L1", "R1", "L2", "R2", "FX"};
-#define NUM_OUTS 7
 
 const char *meta_textShort(uint8_t t) { return t < NUM_NAMES ? shortNames[valueNames[t].shortName] : ""; }
 const char *meta_textLong(uint8_t t) { return t < NUM_NAMES ? longNames[valueNames[t].longName] : ""; }
@@ -65,48 +60,45 @@ void meta_noteName(uint8_t num, char *buf)
     if (buf[1]) { sprintf(buf + 2, "%d", num / 12); } else { sprintf(buf + 1, "%d", num / 12); }
 }
 
-static uint8_t menu_entries(uint8_t menuId)
+/* getMaxEntriesForMenu() / getMenuItemNameForValue() (menu.c); no user samples in the plugin */
+#define MENU_LIST(id, tbl) case id: return (v < 0) ? (const char *)(uintptr_t)(tbl)[0][0] : (tbl)[v + 1];
+static const char *menu_lookup(uint8_t menuId, int v)
 {
     switch (menuId) {
-    case MENU_TRANS: return (uint8_t)transientNames[0][0];
-    case MENU_AUDIO_OUT: return NUM_OUTS;
-    case MENU_FILTER: return (uint8_t)filterTypes[0][0];
-    case MENU_SYNC_RATES: return (uint8_t)syncRateNames[0][0];
-    case MENU_LFO_WAVES: return (uint8_t)lfoWaveNames[0][0];
-    case MENU_RETRIGGER: return (uint8_t)retriggerNames[0][0];
-    case MENU_SEQ_QUANT: return (uint8_t)quantisationNames[0][0];
-    case MENU_MIDI: return (uint8_t)midiModes[0][0];
-    case MENU_NEXT_PATTERN: return (uint8_t)nextPatternNames[0][0];
-    case MENU_WAVEFORM: return NUM_WAVES;
-    case MENU_ROLL_RATES: return (uint8_t)rollRateNames[0][0];
-    case MENU_MIDI_ROUTING: return (uint8_t)midiRoutingNames[0][0];
-    case MENU_MIDI_FILTERING: return (uint8_t)midiFilterNames[0][0];
-    case MENU_PPQ: return (uint8_t)ppqNames[0][0];
-    case MENU_EXT_SYNC: return (uint8_t)extSyncNames[0][0];
-    default: return 1;
+    MENU_LIST(MENU_TRANS, transientNames)
+    MENU_LIST(MENU_AUDIO_OUT, outputNames)
+    MENU_LIST(MENU_AUDIO_OUT_FX, outputNamesFx)
+    MENU_LIST(MENU_FILTER, filterTypes)
+    MENU_LIST(MENU_WAVEFORM, waveformNames)
+    MENU_LIST(MENU_SYNC_RATES, syncRateNames)
+    MENU_LIST(MENU_LFO_WAVES, lfoWaveNames)
+    MENU_LIST(MENU_RETRIGGER, retriggerNames)
+    MENU_LIST(MENU_FOLLOW, followNames)
+    MENU_LIST(MENU_SEQ_QUANT, quantisationNames)
+    MENU_LIST(MENU_MIDI, midiModes)
+    MENU_LIST(MENU_NEXT_PATTERN, nextPatternNames)
+    MENU_LIST(MENU_ROLL_RATES, rollRateNames)
+    MENU_LIST(MENU_MIDI_ROUTING, midiRoutingNames)
+    MENU_LIST(MENU_MIDI_FILTERING, midiFilterNames)
+    MENU_LIST(MENU_PPQ_IN, ppqInNames)
+    MENU_LIST(MENU_PPQ_OUT, ppqOutNames)
+    MENU_LIST(MENU_MIX_FM, mixFmNames)
+    MENU_LIST(MENU_FX, fxNames)
+    MENU_LIST(MENU_DIST, distNames)
+    MENU_LIST(MENU_RATIO, ratioNames)
+    MENU_LIST(MENU_DELAY, delayNames)
+    MENU_LIST(MENU_REVERB, reverbNames)
+    MENU_LIST(MENU_PAT_MODE, patModeNames)
+    MENU_LIST(MENU_STEP_FLAM, stepFlamNames)
+    MENU_LIST(MENU_STEP_SHIFT, stepShiftNames)
+    default: return v < 0 ? (const char *)(uintptr_t)1 : "";
     }
 }
-
+static uint8_t menu_entries(uint8_t menuId) { return (uint8_t)(uintptr_t)menu_lookup(menuId, -1); }
 static const char *menu_name(uint8_t menuId, uint8_t v)
 {
-    switch (menuId) {
-    case MENU_FILTER: return filterTypes[v + 1];
-    case MENU_WAVEFORM: return waveNames[v < NUM_WAVES ? v : 0];
-    case MENU_AUDIO_OUT: return outNames[v < NUM_OUTS ? v : 0];
-    case MENU_TRANS: return transientNames[v + 1];
-    case MENU_SYNC_RATES: return syncRateNames[v + 1];
-    case MENU_LFO_WAVES: return lfoWaveNames[v + 1];
-    case MENU_RETRIGGER: return retriggerNames[v + 1];
-    case MENU_SEQ_QUANT: return quantisationNames[v + 1];
-    case MENU_MIDI: return midiModes[v + 1];
-    case MENU_NEXT_PATTERN: return nextPatternNames[v + 1];
-    case MENU_ROLL_RATES: return rollRateNames[v + 1];
-    case MENU_MIDI_ROUTING: return midiRoutingNames[v + 1];
-    case MENU_MIDI_FILTERING: return midiFilterNames[v + 1];
-    case MENU_PPQ: return ppqNames[v + 1];
-    case MENU_EXT_SYNC: return extSyncNames[v + 1];
-    default: return "";
-    }
+    const uint8_t n = menu_entries(menuId);
+    return menu_lookup(menuId, v < n ? v : 0);
 }
 
 /* the largest value of a sound parameter: menu_encoderChangeParameter()'s clamps. The mod target selections are
@@ -114,13 +106,15 @@ static const char *menu_name(uint8_t menuId, uint8_t v)
 uint8_t meta_soundMax(uint16_t par)
 {
     if (par >= END_OF_SOUND_PARAMETERS) return 127;
-    switch (parameter_dtypes[par] & 0x0F) {
+    switch (parameter_dtypes[par] & 0xFF) {
     case DTYPE_0B255: return 255;
     case DTYPE_1B16: return 16;
+    case DTYPE_1B64: return 64;
     case DTYPE_0B15: return 15;
-    case DTYPE_MIX_FM: case DTYPE_ON_OFF: case DTYPE_0b1: return 1;
+    case DTYPE_0B100: return 100;
+    case DTYPE_ON_OFF: case DTYPE_0b1: return 1;
     case DTYPE_VOICE_LFO: return 6;
-    case DTYPE_MENU: return (uint8_t)(menu_entries((uint8_t)(parameter_dtypes[par] >> 4)) - 1);
+    case DTYPE_MENU: return (uint8_t)(menu_entries((uint8_t)(parameter_dtypes[par] >> 8)) - 1);
     case DTYPE_TARGET_SELECTION_LFO: case DTYPE_TARGET_SELECTION_VELO: case DTYPE_AUTOM_TARGET:
         return (uint8_t)(getNumModTargets() - 1);
     default: return 127;
@@ -131,23 +125,21 @@ uint8_t meta_soundMax(uint16_t par)
 void meta_soundText(uint16_t par, uint8_t v, char *buf)
 {
     if (par >= END_OF_SOUND_PARAMETERS) { sprintf(buf, "%d", v); return; }
-    switch (parameter_dtypes[par] & 0x0F) {
+    switch (parameter_dtypes[par] & 0xFF) {
     case DTYPE_TARGET_SELECTION_VELO:
     case DTYPE_TARGET_SELECTION_LFO:
         meta_modTargetText(v, buf, 0);
         break;
-    case DTYPE_MIX_FM: strcpy(buf, v == 1 ? "mix" : "fm"); break;
     case DTYPE_ON_OFF: strcpy(buf, v == 1 ? "on" : "off"); break;
     case DTYPE_MENU: {
-        const char *s = menu_name((uint8_t)(parameter_dtypes[par] >> 4), v);
+        const char *s = menu_name((uint8_t)(parameter_dtypes[par] >> 8), v);
         snprintf(buf, 8, "%s", s);
         while (*buf && buf[strlen(buf) - 1] == ' ') buf[strlen(buf) - 1] = 0;
         break;
     }
     case DTYPE_PM63: sprintf(buf, "%d", (int)v - 63); break;
     case DTYPE_NOTE_NAME:
-        if (par >= PAR_MIDI_NOTE1 && par <= PAR_MIDI_NOTE7 && v == 0) strcpy(buf, "any");
-        else meta_noteName(v, buf);
+        meta_noteName(v, buf);
         break;
     case DTYPE_0b1: sprintf(buf, "%d", v + 1); break;
     case DTYPE_VOICE_LFO: sprintf(buf, "v%d", v); break;

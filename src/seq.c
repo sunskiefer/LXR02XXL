@@ -2,7 +2,7 @@
  * with its own length, step velocity / note / probability and two automation values, manual rolls, shuffle, pattern
  * chaining from the pattern menu, songs, recording and the euclidean pattern generator.
  *
- * Timing: positions are 96 ppq ticks. The engine runs in the firmware's 32-frame blocks and everything that falls inside a
+ * Timing: positions are 96 ppq ticks. The engine runs in the firmware's 64-frame blocks and everything that falls inside a
  * block fires at its start, as on the machine (voice triggers are applied at the DSP block boundary there too). With the
  * tempo on "MPC" the position is MPC's song position (ppqPos), so steps sit on MPC's grid: no clock pulses are counted
  * (mpc-vst-plugins docs/MIDI_TIMING.md). */

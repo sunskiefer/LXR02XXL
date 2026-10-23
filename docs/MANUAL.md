@@ -1,7 +1,7 @@
 # LXRXXL user manual
 
-LXRXXL 0.5.8, for the Akai Force and MPC (MPC OS 3.x). A port of the open-source Sonic Potions LXR engine with
-LXR-02-style features written from the manual, inspired by the Erica Synths LXR-02. Artwork by Suns Kiefer.
+LXRXXL 0.6.0, for the Akai Force and MPC (MPC OS 3.x). The LXR-02's open-source sound engine (the Erica Synths LXR
+firmware's, GPL-3.0) with its own sequencer and front panel, inspired by the Erica Synths LXR-02. Artwork by Suns Kiefer.
 
 Contents: [1 The page](#1-the-page) · [2 Playing and the transport](#2-playing-and-the-transport) ·
 [3 The keys](#3-the-keys) · [4 Sound editing](#4-sound-editing-voice-mode) · [5 The sequencer](#5-the-sequencer) ·
@@ -229,16 +229,23 @@ kit.
 
 | Value | What |
 |---|---|
-| `typ` | off, drv (drive), rng (ring modulator), cmp (compressor), del (delay) |
+| `typ` | off, drv (drive), rng (ring modulator), cmp (compressor), del (delay), rev (reverb) |
 | `out` | where the FX goes: St1, St2, L1, R1, L2, R2 (in the plugin everything ends at MPC's track output) |
-| `d/w` | dry / wet |
+| `d/w` | dry / wet, 0-100 |
 
-Per type:
+Per type (the LXR-02 firmware's own effects):
 
-- **Drive:** `typ` tub / fld / clp, `drv` overdrive, `ton` tone, `col` colour, `vol` volume.
-- **Ring modulator:** `wav` Sin Tri Saw Rec Noi, `frq` frequency.
+- **Drive:** `typ` tub / fld / clp, `drv` overdrive, `col` colour, `ton` tone, `vol` volume.
+- **Ring modulator:** `wav` Sin Tri Saw Rec Noi PWM, `frq` frequency.
 - **Compressor:** `rat` 1:1 2:1 3:1 4:1 6:1 8:1, `atk` attack, `dec` decay, `tre` threshold, `gai` gain.
-- **Delay:** `typ` Del / Pp (ping-pong), `tim` time, `rng` range lo / hi, `ton` tone, `fbk` feedback.
+- **Delay:** `typ` Del / Pp (ping-pong), `tim` time, `rng` range (0-127: how far the time reaches), `ton` tone,
+  `fbk` feedback.
+- **Reverb:** `typ` Plt (plate), `pre` pre-delay, `dec` decay, `ton` tone, `ref` reflection. The firmware's plate
+  reverb, which is in its code but switched off on the hardware. While it runs, the snare, clap/cymbal and hi-hat use
+  the firmware's lighter filter, as its code does.
+
+LFOs and velocity can modulate each voice's pulse width (after its waveform in the target list) and the FX unit's four
+values (at the end of each voice's list), as on the LXR-02.
 
 ---
 
@@ -271,7 +278,7 @@ LOAD > MORPH loads a kit as the morph target; `mrp` blends towards it. SAVE > MO
 
 ### 9.4 Clear
 
-**SHIFT + COPY/CLR**: the display asks `clear [kit]?`. Turn DATA to choose: `kit` (the sound to its init), `track`
+**SHIFT + COPY/CLR**: the display asks `clear [kit]?`. Turn DATA to choose: `kit` (the sound to the LXR-02's init kit), `track`
 (the selected track's steps), `pattern` (all tracks), `autom. 1` / `autom. 2` (the selected track's automation values).
 Confirm with COPY/CLR or the DATA push. Turning SHIFT off cancels.
 
@@ -280,11 +287,17 @@ Confirm with COPY/CLR or the DATA push. Turning SHIFT off cancels.
 ## 10 The mod: RESET and the randomizers
 
 **RESET** (blue key, top left): back to the factory project (the Hrtl LXR-02 DLC presets), pattern 1 with its kit,
-the sequencer stopped. Anything not saved is replaced.
+the sequencer stopped, the FX tails cut. Anything not saved is replaced.
 
-**Factory content:** 64 kits (Lambo, Reservoir, Faders, Malware, Zipper, Nanobyte, Kronky, Boooost, Dropbar, Goondam,
-SpaceD, Penalty, Dialup, Express, Necro, Mist and init kits) and 16 demo patterns, each with its kit. A new LXRXXL
-starts on them; a saved MPC project opens as you saved it.
+**Factory content**, old and new presets side by side, and 16 demo patterns, each with its kit:
+
+- kits 1-16: the Hrtl kits (Lambo, Reservoir, Faders, Malware, Zipper, Nanobyte, Kronky, Boooost, Dropbar, Goondam,
+  SpaceD, Penalty, Dialup, Express, Necro, Mist) as the LXR-02 plays them;
+- kits 17-32: the same kits as LXRXXL 0.5 shipped them ("Lambo05" ... "Mist05");
+- kit 33 "Init 05": LXRXXL 0.5's init kit; kit 34 "Initkit": the LXR-02 firmware's init kit; 35-64: Initkits.
+
+A new LXRXXL starts on them; a saved MPC project opens as you saved it (also one from 0.5.x: its kits are moved to the
+LXR-02 layout on load).
 
 Along the top: two keys, each showing its knob's amount, and two knobs (0-100 % in steps of 10). The keys show their
 colour and light up brighter when pressed.
@@ -363,7 +376,7 @@ learn cancels it.
 - Each voice listens on its own channel and note (MIX > `ch`, `nte`; by default channel 1, notes 36-42).
 - The global channel (CONFIG > `ch`) plays the selected voice at the note's pitch.
 - CC n sets sound parameter n − 1; NRPN sets the parameters from 128 (the LXR's CC/NRPN list); NRPN 100-105 the pulse
-  width of voices 1-6 and 106-116 the FX unit; CC 1 morphs; program change selects the pattern.
+  width of voices 1-6 and 106-117 the FX unit (reverb and delay type included); CC 1 morphs; program change selects the pattern.
 
 ---
 

@@ -3,13 +3,22 @@
 #include <stdio.h>
 #include <math.h>
 #include "lxr.h"
-#include "menu.h"
-#include "ParameterArray.h"
+#include "Parameters.h"
+#include "menu/menu.h"
 
 /* ---------------------------------------------------------------- the init kit
- * "Clear kit" reverts to the init sound (7.1). The 0.37 firmware has no init kit of its own, so this one is built from
- * the owner's manual's own drum-synthesis recipes (ch. 11): a kick, a tom, the 808 cowbell (to the manual's numbers),
- * the snare, the clap and closed/open hats. */
+ * "Clear kit" reverts to the init sound (7.1): the LXR-02's own init kit (initKit.c, from the firmware: its name, then
+ * the kit's parameters). */
+#include "Preset/InitKit.h"
+
+void lxr_initKit(Kit *k)
+{
+    int i;
+    memset(k, 0, sizeof *k);
+    memcpy(k->name, "Init    ", NAME_LEN);
+    for (i = 8; i < INIT_KIT_SIZE && i - 8 < LXR_KIT_BYTES; i++) k->b[i - 8] = initKit[i];
+}
+
 static void voice_common(uint8_t *b, int v)
 {
     static const uint8_t pans[6] = {PAR_PAN1, PAR_PAN2, PAR_PAN3, PAR_PAN4, PAR_PAN5, PAR_PAN6};
@@ -26,12 +35,14 @@ static void voice_common(uint8_t *b, int v)
     b[PAR_VOL_SLOPE1 + v] = 25;
 }
 
-void lxr_initKit(Kit *k)
+/* LXRXXL 0.5.x's init kit, kept as the "Init 05" kit: built from the owner's manual's drum-synthesis recipes
+ * (ch. 11): a kick, a tom, the 808 cowbell, the snare, the clap and closed/open hats. */
+static void initKit05(Kit *k)
 {
     uint8_t *b = k->b;
     int v;
     memset(k, 0, sizeof *k);
-    memcpy(k->name, "Init    ", NAME_LEN);
+    memcpy(k->name, "Init 05 ", NAME_LEN);
     for (v = 0; v < 6; v++) voice_common(b, v);
     b[PAR_VOICE_DECIMATION_ALL] = 127;
     /* drum 1: kick (11.1): sine around 30-35, no attack, decay 20-30, slope ~25, pitch envelope alike */
@@ -140,11 +151,30 @@ void lxr_factoryProject(Project *p)
     for (i = 0; i < NUM_KITS; i++) {
         p->kits[i] = lxr_factoryKits[i];
         p->kits[i].b[0] = 0;   /* PAR_NONE: the LXR-02 leaves a stray value here */
-        for (k = 1; k < LXR_NUM_SOUND_PARAMS; k++) {
+        for (t = 0; t < 6; t++) {   /* preset_loadDrumset(): mod targets past the list are off */
+            if (p->kits[i].b[PAR_VEL_DEST_1 + t] >= meta_numModTargets()) p->kits[i].b[PAR_VEL_DEST_1 + t] = 0;
+            if (p->kits[i].b[PAR_TARGET_LFO1 + t] >= meta_numModTargets()) p->kits[i].b[PAR_TARGET_LFO1 + t] = 0;
+        }
+        for (k = 1; k < LXR_KIT_BYTES; k++) {
             const uint8_t mx = meta_soundMax((uint16_t)k);
             if (p->kits[i].b[k] > mx) p->kits[i].b[k] = mx;
         }
     }
+    /* Both preset sets: kits 1-16 are the Hrtl LXR-02 DLC as the LXR-02 plays them (new), kits 17-32 the same 16 as
+     * LXRXXL 0.5.x shipped them (old, "05"), kit 33 LXRXXL 0.5.x's init kit, kit 34 the LXR-02 firmware's init kit;
+     * the DLC's empty slots after that keep its Initkit. */
+    for (i = 0; i < 16; i++) {
+        Kit *d = &p->kits[16 + i];
+        int n;
+        lxr_kitFromOld(d, lxr_factoryKits05[i]);
+        for (n = NAME_LEN; n > 0 && d->name[n - 1] == ' '; n--) {}
+        if (n > NAME_LEN - 2) n = NAME_LEN - 2;
+        d->name[n] = '0'; d->name[n + 1] = '5';
+        for (n += 2; n < NAME_LEN; n++) d->name[n] = ' ';
+    }
+    initKit05(&p->kits[32]);
+    lxr_initKit(&p->kits[33]);
+    memcpy(p->kits[33].name, "Initkit ", NAME_LEN);
     for (i = 0; i < lxr_numFactoryPatterns; i++) {
         const LxrFactoryPattern *f = &lxr_factoryPatterns[i];
         Pattern *d = &p->pats[f->pat];
@@ -166,6 +196,7 @@ void lxr_loadFactory(Lxr *x)
     seq_stop(x);
     lxr_dsp_automationReset();
     lxr_factoryProject(&x->p);
+    lxr_dsp_silenceFx();
     x->morphLoaded = 0;
     x->morph = 0;
     x->seq.mutes = 0;
@@ -185,13 +216,12 @@ void lxr_applyKit(Lxr *x)
 {
     int i;
     lxr_dsp_applyKit(x->kit.b, x->morphLoaded ? x->morphKit.b : NULL, x->morph);
-    for (i = EXT_FX_TYPE; i < LXR_NUM_EXT; i++) lxr_fx_set(&x->fx, (uint8_t)i, x->kit.b[LXR_NUM_SOUND_PARAMS + i]);
     x->displayRev++;
 }
 
 void lxr_setKitParam(Lxr *x, uint16_t par, uint8_t value, int record)
 {
-    if (par >= LXR_NUM_SOUND_PARAMS) return;
+    if (par >= LXR_KIT_BYTES) return;
     x->kit.b[par] = value;
     if (x->morphLoaded && x->morph) lxr_dsp_setParam(par, lxr_dsp_morphValue(x->kit.b, x->morphKit.b, par, x->morph));
     else lxr_dsp_setParam(par, value);
@@ -204,8 +234,10 @@ void lxr_setExt(Lxr *x, uint8_t ext, uint8_t value)
 {
     if (ext >= LXR_NUM_EXT) return;
     x->kit.b[LXR_NUM_SOUND_PARAMS + ext] = value;
-    if (ext <= EXT_PWM6) lxr_dsp_setExt(ext, value);
-    else lxr_fx_set(&x->fx, ext, value);
+    if (x->morphLoaded && x->morph)
+        lxr_dsp_setExt(ext, lxr_dsp_morphValue(x->kit.b, x->morphKit.b, (uint16_t)(LXR_NUM_SOUND_PARAMS + ext), x->morph));
+    else lxr_dsp_setExt(ext, value);
+    x->dirtyKit = 1;
     x->displayRev++;
 }
 
@@ -221,7 +253,8 @@ void lxr_trigger(Lxr *x, uint8_t track, uint8_t vel, uint8_t note, int fromUser)
 /* ---------------------------------------------------------------- render */
 uint32_t lxr_clock(Lxr *x) { return x->clock; }
 
-/* the LXR-02's fader taper (adcPots.c, SLIDER_LOG_TAPER_DB 30): a dB-linear curve normalised to 0..1 */
+/* the faders' taper, LXRXXL's since 0.1 (LXR02Open's log fader curve, SLIDER_LOG_TAPER_DB 30): a dB-linear curve
+ * normalised to 0..1, for the six voice faders and the master. (The Erica firmware squares the position.) */
 static float taper(float v)
 {
     const float minGain = 0.0316227766f;   /* 10^(-30/20) */
@@ -234,14 +267,14 @@ void lxr_render(Lxr *x, float *L, float *R, int n)
 {
     int i;
     for (i = 0; i < n; i++) {
-        if (x->outPos >= 32) {
-            float g[6];
+        if (x->outPos >= LXR_BLOCK) {
             int k;
+            float g[6];
             const float master = taper(x->fader[6]);
             for (k = 0; k < 6; k++) g[k] = taper(x->fader[k]);
-            seq_block(x, 32);
-            lxr_dsp_render32(x->outL, x->outR, g, &x->fx);
-            for (k = 0; k < 32; k++) { x->outL[k] *= master; x->outR[k] *= master; }
+            seq_block(x, LXR_BLOCK);
+            lxr_dsp_render(x->outL, x->outR, g);
+            for (k = 0; k < LXR_BLOCK; k++) { x->outL[k] *= master; x->outR[k] *= master; }
             x->outPos = 0;
         }
         L[i] = x->outL[x->outPos];
@@ -267,8 +300,7 @@ void lxr_init(Lxr *x, const char *dataDir)
     x->padBase = 0;
     x->padCol = 1;
     x->padRow = 8;
-    x->outPos = 32;
-    lxr_fx_init(&x->fx);
+    x->outPos = LXR_BLOCK;
     lxr_dsp_init();
     lxr_applyKit(x);
     ui_init(x);

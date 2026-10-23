@@ -13,8 +13,56 @@
 #include <sys/stat.h>
 #include "lxr.h"
 
-#define PROJ_MAGIC "LXRXXLP1"
+#define PROJ_MAGIC "LXRXXLP2"      /* 2: kits are the LXR-02's 247 bytes (0.6) */
+#define PROJ_MAGIC_V1 "LXRXXLP1"   /* LXRXXL 0.5.x: 245-byte kits, the 0.37 engine's mod target numbers */
 #define STATE_MAGIC "LXS1"
+
+/* ---------------------------------------------------------------- LXRXXL 0.5.x data
+ * Kits were 8 name bytes + 245: the sound parameters 0..227, then pulse widths, the FX unit and the delay type at
+ * 244. The velocity and LFO targets were indices into the 0.37 engine's target list. Everything else in a project has
+ * the same layout, so an old project is read with the old kit size and its kits moved over. */
+#define OLD_KIT_BYTES 245
+#define OLD_KIT_SIZE (NAME_LEN + OLD_KIT_BYTES)
+#define OLD_PROJECT_SIZE (sizeof(Project) - NUM_KITS * (sizeof(Kit) - OLD_KIT_SIZE))
+_Static_assert(sizeof(Kit) == NAME_LEN + LXR_KIT_BYTES, "a Kit has no padding");
+_Static_assert(offsetof(Project, kits) == NAME_LEN, "kits follow the name");
+#include "legacy_targets.inc"
+#include "Parameters.h"
+
+static uint8_t legacy_target(uint8_t old)
+{
+    const uint8_t par = old < sizeof legacyTargetParam ? legacyTargetParam[old] : 0;
+    return par ? meta_paramToModTarget(par) : 0;
+}
+
+void lxr_kitFromOld(Kit *k, const unsigned char *old)
+{
+    int i;
+    const uint8_t *ob = old + NAME_LEN;
+    memset(k, 0, sizeof *k);
+    memcpy(k->name, old, NAME_LEN);
+    memcpy(k->b, ob, OLD_KIT_BYTES - 1);                       /* 0..243: same places */
+    k->b[0] = 0;                                               /* PAR_NONE (0.5's factory kits kept a stray value) */
+    k->b[PAR_FX_DELAY_TYPE] = ob[OLD_KIT_BYTES - 1];           /* was at 244 */
+    k->b[PAR_FX_REVERB_TYPE] = 0;
+    k->b[PAR_MORPH_KIT_DEST] = 0;
+    for (i = 0; i < 6; i++) {
+        k->b[PAR_VEL_DEST_1 + i] = legacy_target(ob[PAR_VEL_DEST_1 + i]);
+        k->b[PAR_TARGET_LFO1 + i] = legacy_target(ob[PAR_TARGET_LFO1 + i]);
+    }
+    if (k->b[PAR_FX_DRY_WET] > 100) k->b[PAR_FX_DRY_WET] = 100;   /* the LXR-02's dry/wet is 0..100 */
+    if (k->b[PAR_FX_TYPE] == 4 && k->b[PAR_FX_P2] == 1) k->b[PAR_FX_P2] = 127;   /* 0.5's delay range "hi" */
+}
+
+/* an old project image (OLD_PROJECT_SIZE bytes) into a Project */
+static void project_from_old(Project *p, const unsigned char *old)
+{
+    int i;
+    const size_t tail = sizeof(Project) - offsetof(Project, pats);
+    memcpy(p->name, old, NAME_LEN);
+    for (i = 0; i < NUM_KITS; i++) lxr_kitFromOld(&p->kits[i], old + NAME_LEN + (size_t)i * OLD_KIT_SIZE);
+    memcpy(&p->pats, old + NAME_LEN + NUM_KITS * OLD_KIT_SIZE, tail);
+}
 
 static void mkdirs(const char *path)
 {
@@ -97,7 +145,16 @@ static void *read_thread(void *arg)
     if (f) {
         char magic[8];
         Project *p = malloc(sizeof *p);
-        if (p && fread(magic, 1, 8, f) == 8 && !memcmp(magic, PROJ_MAGIC, 8) && fread(p, 1, sizeof *p, f) == sizeof *p) {
+        int ok = 0;
+        if (p && fread(magic, 1, 8, f) == 8) {
+            if (!memcmp(magic, PROJ_MAGIC, 8)) ok = fread(p, 1, sizeof *p, f) == sizeof *p;
+            else if (!memcmp(magic, PROJ_MAGIC_V1, 8)) {
+                unsigned char *old = malloc(OLD_PROJECT_SIZE);
+                if (old && fread(old, 1, OLD_PROJECT_SIZE, f) == OLD_PROJECT_SIZE) { project_from_old(p, old); ok = 1; }
+                free(old);
+            }
+        }
+        if (ok) {
             Loaded *l = calloc(1, sizeof *l);
             if (l) {
                 l->x = j->x; l->p = p; l->slot = j->slot;
@@ -179,7 +236,8 @@ int store_projectName(Lxr *x, uint8_t slot, char *name)
     proj_path(x, slot, path, sizeof path);
     f = fopen(path, "rb");
     if (!f) return 0;
-    if (fread(magic, 1, 8, f) == 8 && !memcmp(magic, PROJ_MAGIC, 8) && fread(name, 1, NAME_LEN, f) == NAME_LEN) {
+    if (fread(magic, 1, 8, f) == 8 && (!memcmp(magic, PROJ_MAGIC, 8) || !memcmp(magic, PROJ_MAGIC_V1, 8))
+        && fread(name, 1, NAME_LEN, f) == NAME_LEN) {
         int i;
         for (i = 0; i < NAME_LEN; i++) if (name[i] < 32 || name[i] > 126) name[i] = ' ';
         name[NAME_LEN] = 0;
@@ -299,18 +357,18 @@ static void delta_encode(unsigned char *raw, size_t n)
     for (i = n; i-- > 8;) raw[i] ^= raw[i - 8];
 }
 
-static void delta_decode(unsigned char *raw, size_t n)
+static void delta_decode(unsigned char *raw, size_t n, size_t kitSize)
 {
     size_t i;
     unsigned char *k = raw + KITS_AT;
     for (i = 8; i < n; i++) raw[i] ^= raw[i - 8];
-    for (i = sizeof(Kit); i < NUM_KITS * sizeof(Kit); i++) k[i] ^= k[i - sizeof(Kit)];
+    for (i = kitSize; i < NUM_KITS * kitSize; i++) k[i] ^= k[i - kitSize];
 }
 
 char *store_serialize(Lxr *x, int *outLen)
 {
     StateHead h;
-    const size_t rawLen = sizeof h + sizeof(Project) + 2 * sizeof(Kit) + sizeof(Pattern);
+    const size_t rawLen = sizeof h + sizeof(Project) + 2 * sizeof(Kit) + sizeof(Pattern) + sizeof x->fader;
     unsigned char *raw = malloc(rawLen), *packed = malloc(rawLen + rawLen / 64 + 16);
     char *text;
     size_t plen, i, o = 0;
@@ -318,7 +376,7 @@ char *store_serialize(Lxr *x, int *outLen)
     if (!raw || !packed) { free(raw); free(packed); return NULL; }
     memset(&h, 0, sizeof h);
     memcpy(h.magic, STATE_MAGIC, 4);
-    h.version = 2;   /* 2: the voices' default notes are the Force pads' (lxr_padNotes) */
+    h.version = 3;   /* 2: the voices' default notes are the Force pads' (lxr_padNotes); 3: LXR-02 kits (247 bytes) */
     h.kitSlot = x->kitSlot; h.patSlot = x->patSlot; h.songSlot = x->songSlot; h.projSlot = x->projSlot;
     h.morphLoaded = x->morphLoaded; h.morph = x->morph; h.mutes = x->seq.mutes;
     h.track = x->ui.track; h.section = x->ui.section; h.mode = M_VOICE;
@@ -329,6 +387,7 @@ char *store_serialize(Lxr *x, int *outLen)
     memcpy(raw + sizeof h + sizeof(Project), &x->kit, sizeof(Kit));
     memcpy(raw + sizeof h + sizeof(Project) + sizeof(Kit), &x->morphKit, sizeof(Kit));
     memcpy(raw + sizeof h + sizeof(Project) + 2 * sizeof(Kit), &x->pat, sizeof(Pattern));
+    memcpy(raw + sizeof h + sizeof(Project) + 2 * sizeof(Kit) + sizeof(Pattern), x->fader, sizeof x->fader);   /* 3: exact */
     delta_encode(raw, rawLen);
     plen = packbits(raw, rawLen, packed);
     free(raw);
@@ -361,11 +420,14 @@ int store_deserialize(Lxr *x, const char *text)
     size_t n, plen = 0, i;
     unsigned char *packed, *raw;
     StateHead h;
-    int k;
+    int k, old;
+    const size_t newLen = sizeof h + sizeof(Project) + 2 * sizeof(Kit) + sizeof(Pattern) + sizeof x->fader;
+    const size_t oldLen = sizeof h + OLD_PROJECT_SIZE + 2 * OLD_KIT_SIZE + sizeof(Pattern);
     if (strncmp(text, "LXS1:", 5) != 0) return 0;
     rawLen = strtoul(text + 5, NULL, 10);
     p = strchr(text + 5, ':');
-    if (!p || rawLen != sizeof h + sizeof(Project) + 2 * sizeof(Kit) + sizeof(Pattern)) return 0;
+    if (!p || (rawLen != newLen && rawLen != oldLen)) return 0;
+    old = rawLen == oldLen;   /* saved by LXRXXL 0.5.x */
     p++;
     n = strlen(p);
     packed = malloc(n / 4 * 3 + 3);
@@ -382,19 +444,33 @@ int store_deserialize(Lxr *x, const char *text)
     }
     if (unpackbits(packed, plen, raw, rawLen) != rawLen) { free(packed); free(raw); return 0; }
     free(packed);
-    delta_decode(raw, rawLen);
+    delta_decode(raw, rawLen, old ? OLD_KIT_SIZE : sizeof(Kit));
     memcpy(&h, raw, sizeof h);
     if (memcmp(h.magic, STATE_MAGIC, 4) != 0) { free(raw); return 0; }
     seq_stop(x);
-    memcpy(&x->p, raw + sizeof h, sizeof(Project));
+    if (old) {
+        const unsigned char *o = raw + sizeof h;
+        project_from_old(&x->p, o);
+        lxr_kitFromOld(&x->kit, o + OLD_PROJECT_SIZE);
+        lxr_kitFromOld(&x->morphKit, o + OLD_PROJECT_SIZE + OLD_KIT_SIZE);
+        memcpy(&x->pat, o + OLD_PROJECT_SIZE + 2 * OLD_KIT_SIZE, sizeof(Pattern));
+    } else {
+        memcpy(&x->p, raw + sizeof h, sizeof(Project));
+        memcpy(&x->kit, raw + sizeof h + sizeof(Project), sizeof(Kit));
+        memcpy(&x->morphKit, raw + sizeof h + sizeof(Project) + sizeof(Kit), sizeof(Kit));
+        memcpy(&x->pat, raw + sizeof h + sizeof(Project) + 2 * sizeof(Kit), sizeof(Pattern));
+    }
+    for (k = 0; k < NUM_FADERS; k++) x->fader[k] = h.fader[k] / 255.f;
+    if (!old) {   /* 0.6: the faders' exact positions after the pattern (the header keeps the 8-bit ones too) */
+        float f[NUM_FADERS];
+        memcpy(f, raw + sizeof h + sizeof(Project) + 2 * sizeof(Kit) + sizeof(Pattern), sizeof f);
+        for (k = 0; k < NUM_FADERS; k++) if (f[k] >= 0.f && f[k] <= 1.f) x->fader[k] = f[k];
+    }
     if (h.version < 2) {   /* 0.1-0.3 put the voices on 36-42: those untouched move to the pads' notes */
         uint8_t t;
         for (t = 0; t < NUM_TRACKS; t++)
             if (x->p.g.trackNote[t] == 36 + t) x->p.g.trackNote[t] = lxr_padNotes[t];
     }
-    memcpy(&x->kit, raw + sizeof h + sizeof(Project), sizeof(Kit));
-    memcpy(&x->morphKit, raw + sizeof h + sizeof(Project) + sizeof(Kit), sizeof(Kit));
-    memcpy(&x->pat, raw + sizeof h + sizeof(Project) + 2 * sizeof(Kit), sizeof(Pattern));
     free(raw);
     x->kitSlot = h.kitSlot < NUM_KITS ? h.kitSlot : 0;
     x->patSlot = h.patSlot < NUM_PATTERNS ? h.patSlot : 0;
@@ -405,7 +481,6 @@ int store_deserialize(Lxr *x, const char *text)
     x->seq.mutes = h.mutes;
     x->ui.track = h.track < NUM_TRACKS ? h.track : 0;
     x->ui.section = h.section < 8 ? h.section : 0;
-    for (k = 0; k < NUM_FADERS; k++) x->fader[k] = h.fader[k] / 255.f;
     if (h.pad[0] >= 1 && h.pad[0] <= 11) x->rnd.amt = (uint8_t)(h.pad[0] - 1);
     if (h.pad[1] >= 1 && h.pad[1] <= 11) x->rnd.seqAmt = (uint8_t)(h.pad[1] - 1);
     lxr_applyKit(x);
