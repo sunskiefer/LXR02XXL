@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.1
+- Fixed: the installer stopped with `install.sh: line 30: syntax error: unexpected "("` and nothing was installed.
+  The ' in L'Cronx broke the installer script; it is now escaped, and the release fails if any installer script doesn't
+  parse. Nothing else changed from 0.6.0.
+
 ## 0.6.0
 The sound engine is the LXR-02's own: Erica Synths open-sourced the LXR firmware (GPL-3.0,
 github.com/erica-synths/lxr-desktop-app) and LXRXXL now runs its sound engine in place of the LXR02Open port of the

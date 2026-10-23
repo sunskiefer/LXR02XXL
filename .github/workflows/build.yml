@@ -59,6 +59,12 @@ jobs:
             -o dist
           # GPL-3.0: a binary goes with its complete source, released beside it
           git archive --format=zip --prefix="LXRXXL-$VERSION-source/" -o "dist/LXRXXL-$VERSION-source.zip" HEAD
+          # L'Cronx has a ' in it: every installer script must parse, or nothing is released
+          for z in dist/*-mpc-armv7.zip; do
+            for s in $(unzip -Z1 "$z" | grep -E '(^|/)(un)?install\.sh$'); do
+              unzip -p "$z" "$s" | sh -n || { echo "::error::$z: $s does not parse"; exit 1; }
+            done
+          done
 
       - name: Catalog check
         if: steps.ver.outputs.release == '1'
