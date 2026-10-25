@@ -1,5 +1,6 @@
 [
   {"version": "0.5.0", "device": "Akai Force", "firmware": "3.9.1", "date": "2026-10-11"},
   {"version": "0.5.4", "device": "Akai Force", "firmware": "3.9.1", "date": "2026-10-11"},
-  {"version": "0.5.8", "device": "Akai Force", "firmware": "3.9.1", "date": "2026-10-12"}
+  {"version": "0.5.8", "device": "Akai Force", "firmware": "3.9.1", "date": "2026-10-12"},
+  {"version": "0.6.0", "device": "Akai Force", "firmware": "3.9.1", "date": "2026-10-25"}
 ]
